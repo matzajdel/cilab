@@ -17,21 +17,16 @@ public class WorkerService {
 //        parallelPipelineExecutor.submit(new TaskAssignedEvent("asdjkajsdjsldak && echo Hello from Docker nr 1! && sleep 10 && echo Task 1 completed."));
 //        parallelTaskExecutor.submit(new TaskAssignedEvent("echo Hello from Docker nr 2! && sleep 1 && echo Task 2 completed."));
 
-        Stage stage1 = new Stage(UUID.randomUUID(),
-                "echo STAGE1" +
-                        " && " + "sleep 1" +
-                        " && " + "echo ${testText}" +
-                        " && " + "export readTestValue=\"Barcelona moj klub\"" +
-                        " && echo Stage 1 completed.");
-//        Stage stage2 = new Stage(UUID.randomUUID(), "echo from: Parallel Stage 2 && sleep 10 && echo Parallel Stage 2 completed.");
-//        Stage stage3 = new Stage(UUID.randomUUID(), "echo from: Parallel Stage 3 && sleep 1 && echo Parallel Stage 3 completed.");
+        Stage stage1 = new Stage(UUID.randomUUID(), "echo STAGE 1 && sleep 2 && echo REPO_PATH: ${REPO_PATH} && echo ${STORAGE_PATH} && export ST1_FINAL_MESSAGE=\"Repo dspAlsaLib pulled successfully\" && echo STAGE1 completed && echo __STAGE_RESULTS__ST1_FINAL_MESSAGE=${ST1_FINAL_MESSAGE}");
+        Stage stage2 = new Stage(UUID.randomUUID(), "echo STAGE 2 && sleep 2 && echo ${ST1_FINAL_MESSAGE} && echo Stage 2 completed.");
 //        Stage stage4 = new Stage(UUID.randomUUID(), "echo from: Stage 4 && sleep 3 && echo Stage 4 completed.");
 
         PipelineAssignedEvent pipelineEvent = new PipelineAssignedEvent(
                 UUID.randomUUID(),
-                List.of(List.of(stage1)),
+                List.of(List.of(stage1), List.of(stage2)),
                 Map.of(
-                        "testText", "Jaki dzisiaj piekny dzien"
+                        "REPO_PATH", "/mnt/storage/AudioManagerPLatform/repo",
+                        "STORAGE_PATH", "/mnt/storage"
                 )
         );
         parallelPipelineExecutor.submit(pipelineEvent);

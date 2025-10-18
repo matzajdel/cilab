@@ -8,12 +8,16 @@ import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientBuilder;
 import com.github.dockerjava.core.command.LogContainerResultCallback;
 import com.github.dockerjava.api.command.InspectContainerResponse;
+import cz.example.pipeline.StageResult;
 
 import java.util.*;
+import java.util.stream.Collectors;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 public class DockerTaskRunner {
 
-    public void runDockerTask(String script, Map<String, String> envToSet) throws Exception {
+    public StageResult runDockerTask(String script, Map<String, String> envToSet) throws Exception {
         String image = "busybox:latest";
 
         // Configure client (uses environment variables / defaults)
@@ -21,8 +25,7 @@ public class DockerTaskRunner {
         DefaultDockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder()
                 .withDockerHost("tcp://localhost:2375")
                 .build();
-
-        // Build client using default transport. DefaultDockerClientConfig reads DOCKER_HOST, DOCKER_TLS_VERIFY, etc.
+        
         DockerClient dockerClient = DockerClientBuilder.getInstance(config).build();
 
         // Prepare Loki client (Loki URL and labels via environment variables)
@@ -64,6 +67,8 @@ public class DockerTaskRunner {
 
 
 //            System.out.println("Attaching to logs...");
+            // Collect logs into a buffer so we can parse result lines produced by the process
+            Map<String, String> resultEnvs = new HashMap<>();
             try {
                 dockerClient.logContainerCmd(containerId)
                         .withStdOut(true)
@@ -75,8 +80,12 @@ public class DockerTaskRunner {
                                 String message = new String(item.getPayload());
                                 // Print to console as before
                                 System.out.print(message);
-                                // Also push to Loki (one line at a time). LokiClient is async.
-//                                lokiClient.pushAsync(message);
+                                // Append to logs buffer for later parsing
+                                if (message.contains("__STAGE_RESULTS__")) {
+                                    resultEnvs.putAll(parseResultEnv(message));
+                                } else {
+                                    lokiClient.pushAsync(message);
+                                }
                             }
                         }).awaitCompletion();
             } catch (Exception e) {
@@ -98,6 +107,7 @@ public class DockerTaskRunner {
             // Inspect container to get exit code
             Long exitCode = null;
             String[] containerEnvs = new String[]{};
+            String allLogs = "";
             try {
                 InspectContainerResponse inspect = dockerClient.inspectContainerCmd(containerId).exec();
                 if (inspect != null && inspect.getState() != null) {
@@ -107,7 +117,7 @@ public class DockerTaskRunner {
             } catch (Exception e) {
                 System.err.println("Failed to inspect container " + containerId + ": " + e.getMessage());
             }
-            System.out.println("Container exit code: " + exitCode.toString());
+            System.out.println("Container exit code: " + String.valueOf(exitCode));
             System.out.println("Container environment variables" + Arrays.toString(containerEnvs));
 
 
@@ -131,10 +141,56 @@ public class DockerTaskRunner {
 
             System.out.println("Done.");
 
+            // Use logs we collected earlier
+
+            return buildStageResult(String.valueOf(exitCode), resultEnvs);
+
         } finally {
             try {
                 dockerClient.close();
             } catch (Exception ignored) {}
         }
+    }
+
+    private StageResult buildStageResult (String exitCode, Map<String, String> resultEnvs) {
+
+        StageResult result = new StageResult();
+        if (Objects.equals(exitCode, "0")) {
+            result.setStatus(TaskResultStatus.SUCCESSFULL);
+        } else {
+            result.setStatus(TaskResultStatus.FAILED);
+        }
+
+        result.setResultEnvs(resultEnvs);
+
+        return result;
+    }
+
+    private Map<String, String> parseResultEnv(String message) {
+        Map<String, String> map = new HashMap<>();
+        if (message == null || !message.contains("__STAGE_RESULTS__")) return map;
+
+        int idx = message.indexOf("__STAGE_RESULTS__");
+        String payload = message.substring(idx);
+
+        String[] parts = payload.split(",");
+        for (String part : parts) {
+            part = part.trim();
+            if (!part.startsWith("__STAGE_RESULTS__")) continue;
+            // Remove prefix
+            String rest = part.substring("__STAGE_RESULTS__".length());
+            int eq = rest.indexOf('=');
+            if (eq <= 0) continue;
+            String key = rest.substring(0, eq).trim();
+            String value = rest.substring(eq + 1).trim();
+            // strip trailing commas/newlines/carriage returns
+            value = value.replaceAll("[\r\n]+$", "");
+            if (value.endsWith(",")) value = value.substring(0, value.length() - 1).trim();
+            if (!key.isEmpty()) {
+                map.put(key, value);
+            }
+        }
+
+        return map;
     }
 }
