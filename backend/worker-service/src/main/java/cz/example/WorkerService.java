@@ -1,7 +1,6 @@
 package cz.example;
 
 import cz.example.executors.ParallelPipelineExecutor;
-import cz.example.executors.TaskAssignedEvent;
 import cz.example.pipeline.PipelineAssignedEvent;
 import cz.example.pipeline.Stage;
 
@@ -17,18 +16,34 @@ public class WorkerService {
 //        parallelPipelineExecutor.submit(new TaskAssignedEvent("asdjkajsdjsldak && echo Hello from Docker nr 1! && sleep 10 && echo Task 1 completed."));
 //        parallelTaskExecutor.submit(new TaskAssignedEvent("echo Hello from Docker nr 2! && sleep 1 && echo Task 2 completed."));
 
-        Stage stage1 = new Stage(UUID.randomUUID(), "echo STAGE 1 && sleep 2 && echo REPO_PATH: ${REPO_PATH} && echo ${STORAGE_PATH} && export ST1_FINAL_MESSAGE=\"Repo dspAlsaLib pulled successfully\" && echo STAGE1 completed && echo __STAGE_RESULTS__ST1_FINAL_MESSAGE=${ST1_FINAL_MESSAGE}");
-        Stage stage2 = new Stage(UUID.randomUUID(), "echo STAGE 2 && sleep 2 && echo ${ST1_FINAL_MESSAGE} && echo Stage 2 completed.");
-//        Stage stage4 = new Stage(UUID.randomUUID(), "echo from: Stage 4 && sleep 3 && echo Stage 4 completed.");
+        Stage stage1 = new Stage(UUID.randomUUID(), "echo P1S1: STAGE 1 started && sleep 20 && echo P1S1: REPO_PATH: ${REPO_PATH} && echo P1S1: ${STORAGE_PATH} && export ST1_FINAL_MESSAGE=\"Repo dspAlsaLib pulled successfully\" && echo P1S1: STAGE1 completed && echo __STAGE_RESULTS__ST1_FINAL_MESSAGE=${ST1_FINAL_MESSAGE}");
+        Stage stage2 = new Stage(UUID.randomUUID(), "echo P1S2: STAGE 2 started && sleep 10 && echo P1S2: ${ST1_FINAL_MESSAGE} && echo P1S2: Stage 2 completed.");
+        Stage stage3 = new Stage(UUID.randomUUID(), "echo P1S3: STAGE 3 started && sleep 4 && echo P1S3: ${ST1_FINAL_MESSAGE} && echo P1S3: Stage 3 completed.");
+        Stage stage4 = new Stage(UUID.randomUUID(), "echo P1S4: Pipeline 1 successfully finished");
+
+        Stage p2stage1 = new Stage(UUID.randomUUID(), "echo P2S1: STAGE 1 started && sleep 2 && echo P1S1: REPO_PATH: ${REPO_PATH} && echo P2S1: ${STORAGE_PATH} && export ST1_FINAL_MESSAGE=\"Repo dspAlsaLib pulled successfully\" && echo P2S1: STAGE1 completed && echo __STAGE_RESULTS__ST1_FINAL_MESSAGE=${ST1_FINAL_MESSAGE}");
+        Stage p2stage2 = new Stage(UUID.randomUUID(), "echo P2S2: STAGE 2 started && sleep 7 && echo P2S2: ${ST1_FINAL_MESSAGE} && echo P2S2: Stage 2 completed.");
+        Stage p2stage3 = new Stage(UUID.randomUUID(), "echo P2S3: STAGE 3 started && sleep 10 && echo P2S3: ${ST1_FINAL_MESSAGE} && echo P2S3: Stage 3 completed.");
+        Stage p2stage4 = new Stage(UUID.randomUUID(), "echo P2S4: Pipeline 2 successfully finished");
 
         PipelineAssignedEvent pipelineEvent = new PipelineAssignedEvent(
                 UUID.randomUUID(),
-                List.of(List.of(stage1), List.of(stage2)),
+                List.of(List.of(stage1), List.of(stage2, stage3), List.of(stage4)),
                 Map.of(
                         "REPO_PATH", "/mnt/storage/AudioManagerPLatform/repo",
                         "STORAGE_PATH", "/mnt/storage"
                 )
         );
         parallelPipelineExecutor.submit(pipelineEvent);
+
+        PipelineAssignedEvent pipelineEvent2 = new PipelineAssignedEvent(
+                UUID.randomUUID(),
+                List.of(List.of(p2stage1), List.of(p2stage2, p2stage3), List.of(p2stage4)),
+                Map.of(
+                        "REPO_PATH", "/mnt/storage/AudioManagerPLatform/repo",
+                        "STORAGE_PATH", "/mnt/storage"
+                )
+        );
+        parallelPipelineExecutor.submit(pipelineEvent2);
     }
 }

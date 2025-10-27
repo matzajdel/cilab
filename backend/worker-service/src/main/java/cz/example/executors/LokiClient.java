@@ -6,9 +6,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Instant;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.nio.charset.StandardCharsets;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -122,6 +119,4 @@ public class LokiClient {
                 });
 
     }
-
-
 }

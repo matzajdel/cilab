@@ -1,22 +1,21 @@
 package cz.example.pipeline;
 
-import cz.example.executors.TaskResultStatus;
-
 import java.util.Map;
 import java.util.UUID;
 
 public class StageResult {
     private UUID stageId;
-    private TaskResultStatus status;
+    private PipelineResultStatus status;
     private Map<String, String> resultEnvs;
+    private String message;
 
     public StageResult() {
     }
 
-    public StageResult(UUID stageId, TaskResultStatus status, Map<String, String> resultEnvs) {
-        this.stageId = stageId;
+    public StageResult(PipelineResultStatus status, Map<String, String> resultEnvs, String message) {
         this.status = status;
         this.resultEnvs = resultEnvs;
+        this.message = message;
     }
 
     public UUID getStageId() {
@@ -27,11 +26,11 @@ public class StageResult {
         this.stageId = stageId;
     }
 
-    public TaskResultStatus getStatus() {
+    public PipelineResultStatus getStatus() {
         return status;
     }
 
-    public void setStatus(TaskResultStatus status) {
+    public void setStatus(PipelineResultStatus status) {
         this.status = status;
     }
 
@@ -41,5 +40,13 @@ public class StageResult {
 
     public void setResultEnvs(Map<String, String> resultEnvs) {
         this.resultEnvs = resultEnvs;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
     }
 }

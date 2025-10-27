@@ -1,5 +1,6 @@
 package cz.example.executors;
 
+import cz.example.pipeline.PipelineResult;
 import cz.example.pipeline.PipelineAssignedEvent;
 
 import java.util.concurrent.*;
@@ -24,15 +25,11 @@ public class ParallelPipelineExecutor {
         this.taskExecutor = new TaskExecutor();
     }
 
-    private int corePool;
-    private int maxPool;
-    private int queueSize;
-
     public void submit(PipelineAssignedEvent event) {
         // Run pipeline
         pipelineExecutorService.submit(() -> {
             try {
-                TaskResult result = taskExecutor.execute(event);
+                PipelineResult result = taskExecutor.execute(event);
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }

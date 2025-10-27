@@ -1,5 +1,7 @@
 package cz.example.executors;
 
+import cz.example.pipeline.PipelineResult;
+import cz.example.pipeline.PipelineResultStatus;
 import cz.example.pipeline.PipelineAssignedEvent;
 import cz.example.pipeline.Stage;
 import cz.example.pipeline.StageResult;
@@ -13,8 +15,10 @@ import java.util.stream.Collectors;
 
 public class TaskExecutor {
 
-    public TaskResult execute(PipelineAssignedEvent event) throws Exception {
+    public PipelineResult execute(PipelineAssignedEvent event) throws Exception {
         List<List<Stage>> steps = event.getStages();
+
+        // ?
         AtomicBoolean anyFailed = new AtomicBoolean(false);
 
         Map<String, String> accumulatedEnv = new HashMap<>();
@@ -50,7 +54,7 @@ public class TaskExecutor {
                         accumulatedEnv.putAll(res.getResultEnvs());
                     }
                     // If any stage reported failure, mark overall as failed
-                    if (res != null && res.getStatus() != null && res.getStatus() != TaskResultStatus.SUCCESSFULL) {
+                    if (res != null && res.getStatus() != null && res.getStatus() != PipelineResultStatus.SUCCESSFULL) {
                         anyFailed.set(true);
                     }
                 } catch (Exception ignored) {
@@ -59,13 +63,14 @@ public class TaskExecutor {
             }
 
             if (anyFailed.get()) {
-                return new TaskResult(TaskResultStatus.FAILED);
+                // Send kafka notification about other stages
+                return new PipelineResult(PipelineResultStatus.FAILED);
             }
         }
 
         // Persist accumulated envs back to the event so callers can see final envs
         event.setEnvToSet(accumulatedEnv);
 
-        return new TaskResult(TaskResultStatus.SUCCESSFULL);
+        return new PipelineResult(PipelineResultStatus.SUCCESSFULL);
     }
 }
