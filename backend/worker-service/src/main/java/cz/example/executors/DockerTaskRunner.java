@@ -47,7 +47,7 @@ public class DockerTaskRunner {
 
 
             return new StageResult(
-                    exitCode == 0 ? PipelineResultStatus.SUCCESSFULL : PipelineResultStatus.FAILED,
+                    exitCode == 0 ? PipelineResultStatus.SUCCESSFUL : PipelineResultStatus.FAILED,
                     resultEnvs,
                     "Stage completed successfully"
             );

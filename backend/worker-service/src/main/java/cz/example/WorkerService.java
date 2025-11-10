@@ -11,7 +11,24 @@ import java.util.UUID;
 
 public class WorkerService {
 
+    public WorkerService() {
+//        this.producer = new PipelineResultProducer();
+//
+//        // Rejestrujemy shutdown hook, żeby zamknąć producenta przy wyjściu
+//        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+//            System.out.println("Shutting down worker service...");
+//            try {
+//                producer.close();
+//            } catch (Exception e) {
+//                e.printStackTrace();
+//            }
+//        }));
+    }
+
     public static void main(String[] args) throws Exception {
+
+
+
         ParallelPipelineExecutor parallelPipelineExecutor = new ParallelPipelineExecutor(4, 16, 100);
 //        parallelPipelineExecutor.submit(new TaskAssignedEvent("asdjkajsdjsldak && echo Hello from Docker nr 1! && sleep 10 && echo Task 1 completed."));
 //        parallelTaskExecutor.submit(new TaskAssignedEvent("echo Hello from Docker nr 2! && sleep 1 && echo Task 2 completed."));

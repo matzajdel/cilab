@@ -1,4 +1,4 @@
-package cz.example.pipeline;
+package org.example.pipelineservice.kafka.events;
 
 public enum PipelineResultStatus {
     SUCCESSFUL,

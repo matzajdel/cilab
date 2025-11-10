@@ -54,7 +54,7 @@ public class TaskExecutor {
                         accumulatedEnv.putAll(res.getResultEnvs());
                     }
                     // If any stage reported failure, mark overall as failed
-                    if (res != null && res.getStatus() != null && res.getStatus() != PipelineResultStatus.SUCCESSFULL) {
+                    if (res != null && res.getStatus() != null && res.getStatus() != PipelineResultStatus.SUCCESSFUL) {
                         anyFailed.set(true);
                     }
                 } catch (Exception ignored) {
@@ -71,6 +71,6 @@ public class TaskExecutor {
         // Persist accumulated envs back to the event so callers can see final envs
         event.setEnvToSet(accumulatedEnv);
 
-        return new PipelineResult(PipelineResultStatus.SUCCESSFULL);
+        return new PipelineResult(PipelineResultStatus.SUCCESSFUL);
     }
 }
