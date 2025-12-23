@@ -2,7 +2,9 @@ package cz.example.kafka;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import cz.example.pipeline.PipelineResult;
+import cz.example.pipeline.StageResult;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -19,20 +21,32 @@ public class PipelineResultProducer implements Closeable {
 
     private final KafkaProducer<String, String> kafkaProducer;
     private final static ObjectMapper objectMapper = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-    private final static String TOPIC = "pipeline-result-events";
+    private final static String PIPELINE_RESULT_TOPIC = "pipeline-result-events";
+    private final static String STAGE_RESULT_TOPIC = "stage-result-events";
 
     public PipelineResultProducer() {
         this.kafkaProducer = new KafkaProducer<>(setKafkaProducerProperties());
     }
 
-    public void send(PipelineResult event) {
+    public void sendPipelineResult(PipelineResult event) {
         try {
             String eventAsString = objectMapper.writeValueAsString(event);
             String key = UUID.randomUUID().toString();
-            kafkaProducer.send(new ProducerRecord<>(TOPIC, key, eventAsString));
-        } catch (Exception e)  {
+            kafkaProducer.send(new ProducerRecord<>(PIPELINE_RESULT_TOPIC, key, eventAsString));
+        } catch (Exception e)  { //TODO
             log.error("Error while sending pipeline result event to Kafka {}", e);
+        }
+    }
+
+    public void sendStageResult(StageResult event) {
+        try {
+            String eventAsString = objectMapper.writeValueAsString(event);
+            String key = UUID.randomUUID().toString();
+            kafkaProducer.send(new ProducerRecord<>(STAGE_RESULT_TOPIC, key, eventAsString));
+        } catch (Exception e) {
+            log.error("Error while sending stage result event to Kafka {}", e);
         }
     }
 

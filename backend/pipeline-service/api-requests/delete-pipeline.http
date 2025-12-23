@@ -1,0 +1,4 @@
+### GET request to example server
+DELETE http://localhost:8000/api/v1/pipelines/6919daf82444036732c4dff0
+
+###

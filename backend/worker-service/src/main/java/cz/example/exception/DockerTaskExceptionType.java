@@ -1,4 +1,4 @@
-package cz.example.executors.exception;
+package cz.example.exception;
 
 public enum DockerTaskExceptionType {
     PULL_IMAGE_ERROR("Error while pulling docker image"),

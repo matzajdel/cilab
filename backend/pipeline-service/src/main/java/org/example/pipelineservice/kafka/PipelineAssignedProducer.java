@@ -7,7 +7,7 @@ import org.springframework.stereotype.Service;
 
 @RequiredArgsConstructor
 @Service
-public class PipelineAssignedPublisher {
+public class PipelineAssignedProducer {
     private static final String TOPIC = "pipeline-assigned-events";
     private final KafkaTemplate<String, PipelineAssignedEvent> kafkaTemplate;
 

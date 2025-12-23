@@ -1,4 +1,4 @@
-package cz.example.executors.exception;
+package cz.example.exception;
 
 public class DockerTaskException extends RuntimeException {
     private final DockerTaskExceptionType errorType;

@@ -1,29 +1,16 @@
 package cz.example.pipeline;
 
-import java.util.UUID;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
+@Getter
+@Setter
+@AllArgsConstructor
+@NoArgsConstructor
 public class Stage {
-    private UUID stageId;
+    private String id;
+    private String image;
     private String script;
-
-    public Stage(UUID stageId, String script) {
-        this.stageId = stageId;
-        this.script = script;
-    }
-
-    public UUID getStageId() {
-        return stageId;
-    }
-
-    public void setStageId(UUID stageId) {
-        this.stageId = stageId;
-    }
-
-    public String getScript() {
-        return script;
-    }
-
-    public void setScript(String script) {
-        this.script = script;
-    }
 }

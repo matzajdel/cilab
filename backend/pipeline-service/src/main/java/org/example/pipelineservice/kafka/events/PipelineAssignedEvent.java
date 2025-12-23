@@ -1,11 +1,9 @@
 package org.example.pipelineservice.kafka.events;
 
 import lombok.*;
-import org.example.pipelineservice.pipeline.Stage;
 
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 @Getter
 @Setter
@@ -13,7 +11,8 @@ import java.util.UUID;
 @NoArgsConstructor
 @Builder
 public class PipelineAssignedEvent {
-    private UUID pipelineId;
-    private List<List<Stage>> stages;
+    private String pipelineId;
+    private String pipelineRunId;
+    private List<List<StageAssignedEvent>> stages;
     private Map<String, String> envToSet;
 }

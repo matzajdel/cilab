@@ -50,7 +50,7 @@ public class PipelineAssignedConsumer implements Runnable {
                 for (ConsumerRecord<String, String> record : records) {
                     try {
                         PipelineAssignedEvent event = objectMapper.readValue(record.value(), PipelineAssignedEvent.class);
-
+                        log.info("Received object: {}", objectMapper.writeValueAsString(event));
                         pipelineExecutor.submit(event);
                         commitOffset(record);
                     } catch (Exception e) {

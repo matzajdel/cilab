@@ -1,52 +1,33 @@
 package cz.example.pipeline;
 
-import java.util.Map;
-import java.util.UUID;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
+import java.time.Instant;
+import java.util.Map;
+
+@Getter
+@Setter
+@AllArgsConstructor
+@NoArgsConstructor
 public class StageResult {
-    private UUID stageId;
-    private PipelineResultStatus status;
+    private String stageId;
+    private StageResultStatus status;
     private Map<String, String> resultEnvs;
     private String message;
+    private Instant startTime;
+    private Instant endTime;
 
-    public StageResult() {
-    }
-
-    public StageResult(PipelineResultStatus status, Map<String, String> resultEnvs, String message) {
-        this.status = status;
-        this.resultEnvs = resultEnvs;
-        this.message = message;
-    }
-
-    public UUID getStageId() {
-        return stageId;
-    }
-
-    public void setStageId(UUID stageId) {
+    public StageResult(String stageId, StageResultStatus status) {
         this.stageId = stageId;
-    }
-
-    public PipelineResultStatus getStatus() {
-        return status;
-    }
-
-    public void setStatus(PipelineResultStatus status) {
         this.status = status;
     }
 
-    public Map<String, String> getResultEnvs() {
-        return resultEnvs;
-    }
-
-    public void setResultEnvs(Map<String, String> resultEnvs) {
+    public StageResult(StageResultStatus status, Map<String, String> resultEnvs, String message) {
+        this.status = status;
         this.resultEnvs = resultEnvs;
-    }
-
-    public String getMessage() {
-        return message;
-    }
-
-    public void setMessage(String message) {
         this.message = message;
     }
 }

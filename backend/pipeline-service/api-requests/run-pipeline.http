@@ -1,0 +1,6 @@
+### GET request to example server
+POST http://localhost:8000/api/v1/runs/pipelines/694ae2a749f22b31c838b187?runnedByEmail=mateusz.zajdel@aptiv.com
+Content-Type: application/json
+
+{}
+###

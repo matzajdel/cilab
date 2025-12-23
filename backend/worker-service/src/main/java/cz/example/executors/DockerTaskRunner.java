@@ -1,5 +1,7 @@
 package cz.example.executors;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.exception.NotFoundException;
@@ -7,62 +9,71 @@ import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientBuilder;
 import com.github.dockerjava.core.command.LogContainerResultCallback;
-import cz.example.pipeline.PipelineResultStatus;
-import cz.example.executors.exception.DockerTaskException;
+import cz.example.loki.LokiClient;
+import cz.example.loki.LokiService;
+import cz.example.loki.model.LogLineBody;
+import cz.example.pipeline.StageResultStatus;
+import cz.example.exception.DockerTaskException;
 import cz.example.pipeline.StageResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.github.dockerjava.api.command.WaitContainerResultCallback;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
-import static cz.example.executors.exception.DockerTaskExceptionType.*;
+import static cz.example.exception.DockerTaskExceptionType.*;
 
 //TODO: excepltion handling in lokiClient
 public class DockerTaskRunner {
     private static final Logger log = LoggerFactory.getLogger(DockerTaskRunner.class);
     private final DockerClient dockerClient;
-    private final LokiClient lokiClient;
+//    private final LokiClient lokiClient;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private static final long LOG_WAIT_TIMEOUT_MIN = 60;
 
     public DockerTaskRunner() {
         // pattern: constructor chaining
-        this(createDefaultDockerClient(), createDefaultLokiClient());
+        this(createDefaultDockerClient());
     }
 
-    public DockerTaskRunner(DockerClient dockerClient, LokiClient lokiClient) {
+    public DockerTaskRunner(DockerClient dockerClient) {
         this.dockerClient = dockerClient;
-        this.lokiClient = lokiClient;
     }
 
-    public StageResult runDockerTask(String script, Map<String, String> envToSet) {
-        String image = "busybox:latest";
+    public StageResult runDockerTask(String stageId, String script, Map<String, String> envToSet, String image) {
+//        String image = "busybox:latest";
 
         String containerId = null;
         try {
             pullImage(image);
             containerId = createContainer(image, script, envToSet);
             startContainer(containerId);
-            Map<String, String> resultEnvs = handleContainerLogs(containerId);
+            Map<String, String> resultEnvs = handleContainerLogs(containerId, stageId);
             long exitCode = getContainerExitCode(containerId);
 
 
-            return new StageResult(
-                    exitCode == 0 ? PipelineResultStatus.SUCCESSFUL : PipelineResultStatus.FAILED,
+            StageResult result = new StageResult(
+                    exitCode == 0 ? StageResultStatus.SUCCESSFUL : StageResultStatus.FAILED,
                     resultEnvs,
-                    "Stage completed successfully"
+                    exitCode == 0 ? "Stage executed successfully" : "Stage execution failed with exit code " + exitCode
             );
+            result.setEndTime(new Date().toInstant());
+
+            return result;
 
         } catch (DockerTaskException e) {
             log.error("Docker Task Error: {}", e.getErrorType().getDescription());
             return new StageResult(
-                    PipelineResultStatus.FAILED,
+                    StageResultStatus.FAILED,
                     Collections.emptyMap(),
                     e.getErrorType().getDescription()
             );
         } catch (Exception e) {
             log.error("Unexpected Error: {}", e.getMessage());
             return new StageResult(
-                    PipelineResultStatus.FAILED,
+                    StageResultStatus.FAILED,
                     Collections.emptyMap(),
                     "Unexpected error"
             );
@@ -77,21 +88,23 @@ public class DockerTaskRunner {
     private void pullImage(String image) {
         try {
             log.info("Pulling docker image: {}", image);
-            dockerClient.pullImageCmd(image).start().awaitCompletion();
+            dockerClient.pullImageCmd(image)
+                    .start()
+                    .awaitCompletion(60, TimeUnit.MINUTES);
         } catch (Exception e) {
             throw new DockerTaskException(PULL_IMAGE_ERROR, e);
         }
     }
 
     private String createContainer(String image, String script, Map<String, String> envMap) {
-        String containerName = "worker-service-container-" + UUID.randomUUID().toString();
+        String containerName = "worker-" + UUID.randomUUID().toString();
+
+        List<String> envList = new ArrayList<>();
+        if (envMap != null) {
+            envMap.forEach((key, value) -> envList.add(key + "=" + value));
+        }
 
         try {
-            List<String> envList = new ArrayList<>();
-            if (envMap != null) {
-                envMap.forEach((key, value) -> envList.add(key + "=" + value));
-            }
-
             CreateContainerResponse container = dockerClient.createContainerCmd(image)
                     .withCmd("sh", "-c", script)
                     .withName(containerName)
@@ -113,7 +126,7 @@ public class DockerTaskRunner {
         }
     }
 
-    public Map<String, String> handleContainerLogs(String containerId) {
+    public Map<String, String> handleContainerLogs(String containerId, String stageId) {
         Map<String, String> resultEnvs = new HashMap<>();
 
         try {
@@ -124,22 +137,33 @@ public class DockerTaskRunner {
                     .exec(new LogContainerResultCallback() {
                         @Override
                         public void onNext(Frame item) {
-                            String message = new String(item.getPayload());
+                            String message = new String(item.getPayload(), StandardCharsets.UTF_8);
                             System.out.println(message);
 
                             if (message.contains("__STAGE_RESULTS__")) {
                                 resultEnvs.putAll(parseResultEnv(message));
                             } else {
                                 // TODO: exception handling
-                                lokiClient.pushAsync(message);
+                                queueLogToLoki(message, stageId);
                             }
                         }
                     })
-                    .awaitCompletion();
+                    .awaitCompletion(LOG_WAIT_TIMEOUT_MIN, TimeUnit.MINUTES);
 
             return resultEnvs;
         } catch (Exception e) {
             throw new DockerTaskException(HANDLE_LOGS_ERROR, e);
+        }
+    }
+
+    private void queueLogToLoki(String message, String stageId) {
+        LogLineBody logBody = new LogLineBody(stageId, message);
+
+        try {
+            String jsonBody = objectMapper.writeValueAsString(logBody);
+            LokiService.get().enqueueLog(jsonBody);
+        } catch (JsonProcessingException e) {
+            System.err.println("Serialization error: " + e.getMessage());
         }
     }
 
@@ -195,7 +219,7 @@ public class DockerTaskRunner {
             dockerClient.removeContainerCmd(containerId).withForce(true).exec();
             log.info("Container with id: {} successfully removed", containerId);
         } catch (NotFoundException e) {
-            log.warn("Failed to remove conteiner {}, {}", containerId, e.getMessage());
+            log.warn("Failed to remove container {}, {}", containerId, e.getMessage());
         }
     }
 
@@ -207,13 +231,13 @@ public class DockerTaskRunner {
         return DockerClientBuilder.getInstance(config).build();
     }
 
-    private static LokiClient createDefaultLokiClient() {
-        String lokiUrl = System.getenv().getOrDefault("LOKI_URL", "http://localhost:3100/loki/api/v1/push");
-        String jobLabel = System.getenv().getOrDefault("LOKI_JOB", "worker-service");
-
-        Map<String, String> lokiLabels = new HashMap<>();
-        lokiLabels.put("job", jobLabel);
-
-        return new LokiClient(lokiUrl, lokiLabels);
-    }
+//    private static LokiClient createDefaultLokiClient() {
+//        String lokiUrl = System.getenv().getOrDefault("LOKI_URL", "http://localhost:3100/loki/api/v1/push");
+//        String jobLabel = System.getenv().getOrDefault("LOKI_JOB", "worker-service");
+//
+//        Map<String, String> lokiLabels = new HashMap<>();
+//        lokiLabels.put("job", jobLabel);
+//
+//        return new LokiClient(lokiUrl, lokiLabels);
+//    }
 }

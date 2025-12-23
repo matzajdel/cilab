@@ -1,0 +1,86 @@
+### POST request to example server
+PUT http://localhost:8000/api/v1/pipelines/6919daf82444036732c4dff0
+Content-Type: application/json
+
+{
+  "name": "soundbox-pipeline",
+  "authorEmail": "mateusz.zajdel@aptiv.com",
+  "parameters":
+  [
+    {
+      "name": "UPLOAD_ARTIFACTS",
+      "defaultValue": "FALSE",
+      "description": "Flag to upload build artifacts"
+    }
+  ],
+  "envVariables":
+  {
+    "HOME": "/home/ci-user",
+    "NETRC": ".pipelinenetrc"
+  },
+  "stages":
+  [
+    [
+      {
+        "name": "build-soundbox",
+        "image": "busybox:latest",
+        "repo":
+        {
+          "name": "SoundBox",
+          "commitId": "12345"
+        },
+        "stageEnvironment":
+        {
+          "stageEnvVariables":
+          {
+            "BUILD_TYPE": "Release",
+            "TARGET_PLATFORM": "x86_64"
+          },
+          "results":
+          [
+            "ARTIFACTS_PATH"
+          ]
+        },
+        "script": "python3 buildsoundbox.py"
+      },
+      {
+        "name": "build-soundboxtool",
+        "image": "busybox:latest",
+        "repo":
+        {
+          "name": "SoundBoxTool",
+          "commitId": "12345"
+        },
+        "stageEnvironment":
+        {
+          "stageEnvVariables":
+          {
+            "BUILD_TYPE": "Release",
+            "TARGET_PLATFORM": "x86_64"
+          },
+          "results":
+          [
+            "ARTIFACTS_PATH"
+          ]
+        },
+        "script": "python3 buildsoundboxtool.py"
+      }
+    ],
+    [
+      {
+        "name": "upload-artifacts",
+        "image": "busybox:latest",
+        "stageEnvironment":
+        {
+          "stageEnvVariables":
+          {
+            "UPLOAD_PATH": "/mnt/artifacts/"
+          }
+        },
+        "script": "python3 uploadartifacts.py"
+      }
+    ]
+  ]
+}
+
+###

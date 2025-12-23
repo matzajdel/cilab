@@ -1,0 +1,130 @@
+### POST request to example server
+POST http://localhost:8000/api/v1/pipelines
+Content-Type: application/json
+
+{
+  "name": "first-pipeline",
+  "authorEmail": "mateusz.zajdel@aptiv.com",
+  "parameters": [
+    {
+      "name": "UPLOAD_ARTIFACTS",
+      "defaultValue": "TRUE",
+      "description": "Flag to upload build artifacts"
+    }
+  ],
+  "envVariables": {
+    "HOME": "/home/ci-user",
+    "NETRC": ".pipelinenetrc"
+  },
+  "stages": [
+    [
+      {
+        "name": "firststage",
+        "image": "busybox:latest",
+        "stageEnvironment": {
+          "stageEnvVariables": {
+            "BUILD_TYPE": "Release",
+            "TARGET_PLATFORM": "x86_64"
+          }
+        },
+        "script": "echo \"Hello from stage1\" && sleep 8 && echo ${UPLOAD_ARTIFACTS} && echo ${HOME} && echo ${NETRC} && echo ${BUILD_TYPE}"
+      },
+      {
+        "name": "secondstage",
+        "image": "busybox:latest",
+        "stageEnvironment": {
+          "stageEnvVariables": {
+            "BUILD_TYPE": "Verification",
+            "TARGET_PLATFORM": "gcc11"
+          }
+        },
+        "script": "echo \"Hello from stage2\" && sleep 4 && echo ${UPLOAD_ARTIFACTS} && echo ${HOME} && echo ${NETRC}"
+      }
+    ]
+  ],
+  "labels": [
+    "Verified"
+  ]
+}
+
+###
+#{
+#  "name": "soundbox-pipeline",
+#  "authorEmail": "mateusz.zajdelaptiv.com",
+#  "parameters":
+#  [
+#    {
+#      "name": "UPLOAD_ARTIFACTS",
+#      "defaultValue": "TRUE",
+#      "description": "Flag to upload build artifacts"
+#    }
+#  ],
+#  "envVariables":
+#  {
+#    "HOME": "/home/ci-user",
+#    "NETRC": ".pipelinenetrc"
+#  },
+#  "stages":
+#  [
+#    [
+#      {
+#          "name": "build-soundbox",
+#          "image": "busybox:latest",
+#          "repo":
+#          {
+#            "name": "SoundBox",
+#            "commitId": "12345"
+#          },
+#          "stageEnvironment":
+#          {
+#            "stageEnvVariables":
+#            {
+#              "BUILD_TYPE": "Release",
+#              "TARGET_PLATFORM": "x86_64"
+#            },
+#            "results":
+#            [
+#              "ARTIFACTS_PATH"
+#            ]
+#          },
+#          "script": "python3 buildsoundbox.py"
+#      },
+#      {
+#        "name": "build-soundboxtool",
+#        "image": "busybox:latest",
+#        "repo":
+#        {
+#          "name": "SoundBoxTool",
+#          "commitId": "12345"
+#        },
+#        "stageEnvironment":
+#        {
+#          "stageEnvVariables":
+#          {
+#            "BUILD_TYPE": "Release",
+#            "TARGET_PLATFORM": "x86_64"
+#          },
+#          "results":
+#          [
+#            "ARTIFACTS_PATH"
+#          ]
+#        },
+#        "script": "python3 buildsoundboxtool.py"
+#      }
+#    ],
+#    [
+#      {
+#        "name": "upload-artifacts",
+#        "image": "busybox:latest",
+#        "stageEnvironment":
+#        {
+#          "stageEnvVariables":
+#          {
+#            "UPLOAD_PATH": "/mnt/artifacts/"
+#          }
+#        },
+#        "script": "python3 uploadartifacts.py"
+#      }
+#    ]
+#  ]
+#}

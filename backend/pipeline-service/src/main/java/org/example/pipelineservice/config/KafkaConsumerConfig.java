@@ -3,6 +3,7 @@ package org.example.pipelineservice.config;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.example.pipelineservice.kafka.events.PipelineResultEvent;
+import org.example.pipelineservice.kafka.events.StageResultEvent;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,24 +23,32 @@ public class KafkaConsumerConfig {
     private String BOOTSTRAP_SERVERS;
 
     @Bean
-    public ConsumerFactory<String, PipelineResultEvent> consumerFactory() {
+    public ConcurrentKafkaListenerContainerFactory<String, PipelineResultEvent> pipelineResultContainerFactory() {
+        return createContainerFactory(PipelineResultEvent.class);
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, StageResultEvent> stageResultContainerFactory() {
+        return createContainerFactory(StageResultEvent.class);
+    }
+
+    private <T> ConsumerFactory<String, T> createConsumerFactory(Class<T> clazz) {
         Map<String, Object> props = new HashMap<>();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, BOOTSTRAP_SERVERS);
         props.put(ConsumerConfig.GROUP_ID_CONFIG, "pipeline-service-group");
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class.getName());
         //Json Deserializer settings
-        props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, PipelineResultEvent.class.getName());
-        props.put(JsonDeserializer.TRUSTED_PACKAGES, "src.main.*");
+        props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, clazz.getName());
+        props.put(JsonDeserializer.TRUSTED_PACKAGES, "cz.example.*");
 
         return new DefaultKafkaConsumerFactory<>(props);
     }
 
-    @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, PipelineResultEvent> kafkaListenerContainerFactory() {
-        ConcurrentKafkaListenerContainerFactory<String, PipelineResultEvent> factory =
+    private <T> ConcurrentKafkaListenerContainerFactory<String, T> createContainerFactory(Class<T> clazz) {
+        ConcurrentKafkaListenerContainerFactory<String, T> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
-        factory.setConsumerFactory(consumerFactory());
+        factory.setConsumerFactory(createConsumerFactory(clazz));
         factory.setConcurrency(3);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
 

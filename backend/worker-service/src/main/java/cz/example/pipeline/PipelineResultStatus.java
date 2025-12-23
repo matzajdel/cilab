@@ -2,5 +2,7 @@ package cz.example.pipeline;
 
 public enum PipelineResultStatus {
     SUCCESSFUL,
-    FAILED
+    FAILED,
+    IN_PROGRESS,
+    WAITING
 }
