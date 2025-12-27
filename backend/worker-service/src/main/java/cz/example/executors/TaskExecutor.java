@@ -2,22 +2,36 @@ package cz.example.executors;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import cz.example.kafka.PipelineResultProducer;
 import cz.example.pipeline.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 public class TaskExecutor {
-    private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
-    private final PipelineResultProducer pipelineResultProducer = new PipelineResultProducer();
+
+    private static final Logger logger = LoggerFactory.getLogger(TaskExecutor.class);
+    private final ObjectMapper objectMapper;
+    private final PipelineResultProducer pipelineResultProducer;
+    private final DockerTaskRunner runner;
+    private final ExecutorService dockerExecutor;
+
+    public TaskExecutor(ObjectMapper objectMapper, PipelineResultProducer pipelineResultProducer, DockerTaskRunner runner) {
+        this.objectMapper = objectMapper;
+        this.pipelineResultProducer = pipelineResultProducer;
+        this.runner = runner;
+        this.dockerExecutor = Executors.newFixedThreadPool(50);
+    }
 
     public PipelineResult execute(PipelineAssignedEvent event) throws Exception {
-        DockerTaskRunner runner = new DockerTaskRunner();
         List<List<Stage>> stages = event.getStages();
-        List<StageResult> stageResults = new ArrayList<>();
+        List<StageResult> allResults = new ArrayList<>();
 
         Map<String, String> accumulatedEnv = new HashMap<>();
         if (event.getEnvToSet() != null) {
@@ -25,37 +39,22 @@ public class TaskExecutor {
         }
 
         for (List<Stage> stageGroup : stages) {
+            Map<String, String> envSnapshot = new HashMap<>(accumulatedEnv);
+
             List<CompletableFuture<StageResult>> futures = stageGroup.stream()
-                    .map(stage -> CompletableFuture.supplyAsync(() -> {
-                        try {
-                            //Send kafka notification about stage start
-                            System.out.println("FAKEKAFKA: Starting stage: " + objectMapper.writeValueAsString(createStageResult(stage.getId(), StageResultStatus.IN_PROGRESS, null)));
-                            pipelineResultProducer.sendStageResult(createStageResult(stage.getId(), StageResultStatus.IN_PROGRESS, null));
+                    .map(stage -> CompletableFuture.supplyAsync(
+                            () -> processStage(stage, envSnapshot),
+                            dockerExecutor
+                    ))
+                    .toList();
 
-                            Map<String, String> envSnapshot = new HashMap<>(accumulatedEnv);
-                            StageResult result = runner.runDockerTask(stage.getId(), stage.getScript(), envSnapshot, stage.getImage());
-                            result.setStageId(stage.getId());
-
-                            System.out.println("FAKEKAFKA: Finished stage: " + objectMapper.writeValueAsString(result));
-                            pipelineResultProducer.sendStageResult(result);
-                            return result;
-                        } catch (Exception e) {
-                            return createStageResult(stage.getId(), StageResultStatus.FAILED, "Exception: " + e.getMessage());
-                        }
-                    }))
-                    .collect(Collectors.toList());
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
             List<StageResult> groupResults = futures.stream()
-                    .map(future -> {
-                        try {
-                            return future.join();
-                        } catch (Exception e) {
-                            return createStageResult(null, StageResultStatus.FAILED, "Exception: " + e.getMessage());
-                        }
-                    })
-                    .collect(Collectors.toList());
+                    .map(CompletableFuture::join)
+                    .toList();
 
-            stageResults.addAll(groupResults);
+            allResults.addAll(groupResults);
 
             boolean groupFailed = false;
             for (StageResult res : groupResults) {
@@ -67,32 +66,61 @@ public class TaskExecutor {
             }
 
             if (groupFailed) {
-                Set<String> finishedStageIds = stageResults.stream()
-                        .map(StageResult::getStageId)
-                        .collect(Collectors.toSet());
-
-                List<Stage> skippedStages = stages.stream()
-                        .flatMap(List::stream)
-                        .filter(stage -> !finishedStageIds.contains(stage.getId()))
-                        .toList();
-
-                skippedStages.forEach(failedStage -> {
-                    try {
-                        System.out.println("FAKEKAFKA: Stage failed: " + objectMapper.writeValueAsString(new StageResult(failedStage.getId(), StageResultStatus.SKIPPED)));
-                        pipelineResultProducer.sendStageResult(new StageResult(failedStage.getId(), StageResultStatus.SKIPPED));
-                    } catch (JsonProcessingException e) {
-                        throw new RuntimeException(e);
-                    }
-                });
-
+                handleSkippedStages(stages, allResults);
                 return new PipelineResult(event.getPipelineRunId(), PipelineResultStatus.FAILED);
             }
         }
 
-        // Persist accumulated envs back to the event so callers can see final envs
-//        event.setEnvToSet(accumulatedEnv);
-
         return new PipelineResult(event.getPipelineRunId(), PipelineResultStatus.SUCCESSFUL);
+    }
+
+    private StageResult processStage(Stage stage, Map<String, String> envSnapshot) {
+        try {
+            sendNotification("Starting stage", createStageResult(stage.getId(), StageResultStatus.IN_PROGRESS, null));
+
+            StageResult result = runner.runDockerTask(stage.getId(), stage.getScript(), envSnapshot, stage.getImage());
+            result.setStageId(stage.getId());
+
+            sendNotification("Finished stage", result);
+            return result;
+        } catch (Exception e) {
+            StageResult failed = createStageResult(stage.getId(), StageResultStatus.FAILED, "Exception: " + e.getMessage());
+            sendNotification("Stage failed with exception", failed);
+            return failed;
+        }
+    }
+
+    private void handleSkippedStages(List<List<Stage>> allStages, List<StageResult> results) {
+        Set<String> finishedStageIds = results.stream()
+                .map(StageResult::getStageId)
+                .collect(Collectors.toSet());
+
+        allStages.stream()
+                .flatMap(List::stream)
+                .filter(stage -> !finishedStageIds.contains(stage.getId()))
+                .forEach(skippedStage -> {
+                    StageResult result = StageResult.builder()
+                            .stageId(skippedStage.getId())
+                            .status(StageResultStatus.SKIPPED)
+                            .endTime(Instant.now())
+                            .build();
+
+                    sendNotification("Skipping stage", result);
+                });
+    }
+
+    private void sendNotification(String logMsg, StageResult result) {
+        logger.info("{}: {}", logMsg, result.getStageId());
+
+        pipelineResultProducer.sendStageResult(result);
+
+        try {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Payload: {}", objectMapper.writeValueAsString(result));
+            }
+        } catch (JsonProcessingException e) {
+            logger.error("Failed to serialize result for Kafka", e);
+        }
     }
 
     private StageResult createStageResult(String id, StageResultStatus status, String message) {
@@ -108,79 +136,3 @@ public class TaskExecutor {
         return result;
     }
 }
-
-//public class TaskExecutor {
-//    private final ObjectMapper objectMapper = new ObjectMapper();
-//    private final DockerTaskRunner runner = new DockerTaskRunner();
-//
-//    public PipelineResult execute(PipelineAssignedEvent event) throws Exception {
-//        List<List<Stage>> stages = event.getStages();
-//        List<String> finshedStageIds = new ArrayList<>();
-//
-//        // ?
-//        AtomicBoolean anyFailed = new AtomicBoolean(false);
-//
-//        Map<String, String> accumulatedEnv = new HashMap<>();
-//        if (event.getEnvToSet() != null) {
-//            accumulatedEnv.putAll(event.getEnvToSet());
-//        }
-//
-//        for (List<Stage> stageGroup : stages) {
-//            List<CompletableFuture<StageResult>> futures = stageGroup.stream()
-//                    .map(stage -> CompletableFuture.supplyAsync(() -> {
-//                        try {
-//                            //Send kafka notification about stage start
-//
-//
-//                            Map<String, String> envSnapshot = new HashMap<>(accumulatedEnv);
-//                            StageResult result = runner.runDockerTask(stage.getScript(), envSnapshot, stage.getImage());
-//                            result.setStageId(stage.getStageId());
-//                            return result;
-//                        } catch (Exception e) {
-//                            anyFailed.set(true);
-//                            throw new RuntimeException(e);
-//                        }
-//                    }))
-//                    .collect(Collectors.toList());
-//
-//            try {
-//                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-//            } catch (Exception ignored) {
-//            }
-//
-//            for (CompletableFuture<StageResult> f : futures) {
-//                try {
-//                    StageResult res = f.join();
-//                    finshedStageIds.add(res.getStageId());
-//                    if (res != null && res.getResultEnvs() != null) {
-//                        // Send kafka notofication about stage completion
-//                        System.out.println(objectMapper.writeValueAsString(res));
-//
-//                        accumulatedEnv.putAll(res.getResultEnvs());
-//                    }
-//                    // If any stage reported failure, mark overall as failed
-//                    if (res != null && res.getStatus() != null && res.getStatus() != StageResultStatus.SUCCESSFUL) {
-//                        anyFailed.set(true);
-//                    }
-//                } catch (Exception ignored) {
-//                    // already marked as failed in the supplier
-//                }
-//            }
-//
-//            if (anyFailed.get()) {
-//                // Send kafka notification about other stages
-//                List<Stage> failedStages = stages.stream()
-//                        .flatMap(List::stream)
-//                        .filter(stage -> !finshedStageIds.contains(stage.getStageId()))
-//                        .collect(Collectors.toList());
-//
-//                return new PipelineResult(PipelineResultStatus.FAILED);
-//            }
-//        }
-//
-//        // Persist accumulated envs back to the event so callers can see final envs
-//        event.setEnvToSet(accumulatedEnv);
-//
-//        return new PipelineResult(PipelineResultStatus.SUCCESSFUL);
-//    }
-//}

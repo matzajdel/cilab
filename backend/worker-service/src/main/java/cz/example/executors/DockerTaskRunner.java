@@ -9,7 +9,6 @@ import com.github.dockerjava.api.model.Frame;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientBuilder;
 import com.github.dockerjava.core.command.LogContainerResultCallback;
-import cz.example.loki.LokiClient;
 import cz.example.loki.LokiService;
 import cz.example.loki.model.LogLineBody;
 import cz.example.pipeline.StageResultStatus;
@@ -28,24 +27,19 @@ import static cz.example.exception.DockerTaskExceptionType.*;
 //TODO: excepltion handling in lokiClient
 public class DockerTaskRunner {
     private static final Logger log = LoggerFactory.getLogger(DockerTaskRunner.class);
-    private final DockerClient dockerClient;
-//    private final LokiClient lokiClient;
-    private final ObjectMapper objectMapper = new ObjectMapper();
     private static final long LOG_WAIT_TIMEOUT_MIN = 60;
+    private final DockerClient dockerClient;
+    private final ObjectMapper objectMapper;
 
-    public DockerTaskRunner() {
-        // pattern: constructor chaining
-        this(createDefaultDockerClient());
-    }
-
-    public DockerTaskRunner(DockerClient dockerClient) {
+    public DockerTaskRunner(DockerClient dockerClient, ObjectMapper objectMapper) {
         this.dockerClient = dockerClient;
+        this.objectMapper = objectMapper;
     }
 
     public StageResult runDockerTask(String stageId, String script, Map<String, String> envToSet, String image) {
-//        String image = "busybox:latest";
 
         String containerId = null;
+
         try {
             pullImage(image);
             containerId = createContainer(image, script, envToSet);
@@ -54,14 +48,12 @@ public class DockerTaskRunner {
             long exitCode = getContainerExitCode(containerId);
 
 
-            StageResult result = new StageResult(
-                    exitCode == 0 ? StageResultStatus.SUCCESSFUL : StageResultStatus.FAILED,
-                    resultEnvs,
-                    exitCode == 0 ? "Stage executed successfully" : "Stage execution failed with exit code " + exitCode
-            );
-            result.setEndTime(new Date().toInstant());
-
-            return result;
+            return StageResult.builder()
+                    .status(exitCode == 0 ? StageResultStatus.SUCCESSFUL : StageResultStatus.FAILED)
+                    .resultEnvs(resultEnvs)
+                    .message(exitCode == 0 ? "Stage executed successfully" : "Stage execution failed with exit code " + exitCode)
+                    .endTime(new Date().toInstant())
+                    .build();
 
         } catch (DockerTaskException e) {
             log.error("Docker Task Error: {}", e.getErrorType().getDescription());
@@ -167,9 +159,10 @@ public class DockerTaskRunner {
         }
     }
 
-    private Map<String, String> parseResultEnv(String message) {
+    private Map<String, String> parseResultEnv(String message) {;
+        if (message == null || !message.contains("__STAGE_RESULTS__")) return Collections.emptyMap();
+
         Map<String, String> map = new HashMap<>();
-        if (message == null || !message.contains("__STAGE_RESULTS__")) return map;
 
         int idx = message.indexOf("__STAGE_RESULTS__");
         String payload = message.substring(idx);
@@ -222,22 +215,4 @@ public class DockerTaskRunner {
             log.warn("Failed to remove container {}, {}", containerId, e.getMessage());
         }
     }
-
-    private static DockerClient createDefaultDockerClient() {
-        DefaultDockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder()
-                .withDockerHost("tcp://localhost:2375")
-                .build();
-
-        return DockerClientBuilder.getInstance(config).build();
-    }
-
-//    private static LokiClient createDefaultLokiClient() {
-//        String lokiUrl = System.getenv().getOrDefault("LOKI_URL", "http://localhost:3100/loki/api/v1/push");
-//        String jobLabel = System.getenv().getOrDefault("LOKI_JOB", "worker-service");
-//
-//        Map<String, String> lokiLabels = new HashMap<>();
-//        lokiLabels.put("job", jobLabel);
-//
-//        return new LokiClient(lokiUrl, lokiLabels);
-//    }
 }

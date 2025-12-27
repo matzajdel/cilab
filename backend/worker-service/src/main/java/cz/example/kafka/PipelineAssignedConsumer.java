@@ -25,16 +25,12 @@ public class PipelineAssignedConsumer implements Runnable {
     private final ParallelPipelineExecutor pipelineExecutor;
     private volatile boolean running = true;
 
-    public PipelineAssignedConsumer(String groupId, String topic) {
+    public PipelineAssignedConsumer(String groupId, String topic, ObjectMapper objectMapper, ParallelPipelineExecutor pipelineExecutor) {
         this.groupId = groupId;
-
         this.kafkaConsumer = new KafkaConsumer<>(setKafkaConsumerProperties());
         this.kafkaConsumer.subscribe(List.of(topic));
-
-        this.objectMapper = new ObjectMapper()
-                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-
-        this.pipelineExecutor = new ParallelPipelineExecutor(4, 16, 100);
+        this.objectMapper = objectMapper;
+        this.pipelineExecutor = pipelineExecutor;
     }
 
     @Override
@@ -48,16 +44,10 @@ public class PipelineAssignedConsumer implements Runnable {
                 }
 
                 for (ConsumerRecord<String, String> record : records) {
-                    try {
-                        PipelineAssignedEvent event = objectMapper.readValue(record.value(), PipelineAssignedEvent.class);
-                        log.info("Received object: {}", objectMapper.writeValueAsString(event));
-                        pipelineExecutor.submit(event);
-                        commitOffset(record);
-                    } catch (Exception e) {
-                        log.error("Error processing message from topic {}: {}", record.topic(), e.getMessage(), e);
-                        // TODO: DLT (Dead Letter Topic)
-                    }
+                    processRecord(record);
                 }
+
+                commitBatch();
             }
         } catch (WakeupException e) {
             if (running) throw e; // Wakeup używany do przerwania poll() przy zamykaniu
@@ -68,13 +58,22 @@ public class PipelineAssignedConsumer implements Runnable {
         }
     }
 
-    private void commitOffset(ConsumerRecord<String, String> record) {
+    private void processRecord(ConsumerRecord<String, String> record) {
         try {
-            TopicPartition topicPartition = new TopicPartition(record.topic(), record.partition());
-            OffsetAndMetadata offset = new OffsetAndMetadata(record.offset() + 1);
-            kafkaConsumer.commitSync(Map.of(topicPartition, offset));
+            PipelineAssignedEvent event = objectMapper.readValue(record.value(), PipelineAssignedEvent.class);
+            log.info("Received object: {}", objectMapper.writeValueAsString(event));
+            pipelineExecutor.submit(event);
         } catch (Exception e) {
-            log.warn("Failed to commit offset for topic {} partition {}: {}", record.topic(), record.partition(), e.getMessage());
+            log.error("Error processing message from topic {}: {}", record.topic(), e.getMessage(), e);
+            // TODO: DLT (Dead Letter Topic)
+        }
+    }
+
+    private void commitBatch() {
+        try {
+            kafkaConsumer.commitSync();
+        } catch (Exception e) {
+            log.warn("Failed to commit batch offsets", e);
         }
     }
 

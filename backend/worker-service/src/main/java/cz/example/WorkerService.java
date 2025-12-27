@@ -1,7 +1,12 @@
 package cz.example;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.github.dockerjava.api.DockerClient;
+import cz.example.executors.DockerTaskRunner;
 import cz.example.executors.ParallelPipelineExecutor;
+import cz.example.executors.TaskExecutor;
+import cz.example.executors.docker.DockerClientFactory;
 import cz.example.kafka.PipelineAssignedConsumer;
 import cz.example.kafka.PipelineResultProducer;
 import cz.example.loki.LokiService;
@@ -9,39 +14,82 @@ import cz.example.pipeline.PipelineAssignedEvent;
 import cz.example.pipeline.PipelineResult;
 import cz.example.pipeline.Stage;
 import cz.example.pipeline.StageResultStatus;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.serialization.StringSerializer;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.UUID;
 
 
 public class WorkerService {
 
-    public WorkerService() {
-//        this.producer = new PipelineResultProducer();
-//
-//        // Rejestrujemy shutdown hook, żeby zamknąć producenta przy wyjściu
-//        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-//            System.out.println("Shutting down worker service...");
-//            try {
-//                producer.close();
-//            } catch (Exception e) {
-//                e.printStackTrace();
-//            }
-//        }));
-    }
-
     public static void main(String[] args) throws Exception {
 
-        Thread kafkaConsumerThread = new Thread(new PipelineAssignedConsumer(
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+
+        KafkaProducer<String, String> kafkaProducer = new KafkaProducer<>(setKafkaProducerProperties());
+        PipelineResultProducer resultProducer = new PipelineResultProducer(objectMapper, kafkaProducer);
+
+        LokiService.init("http://localhost:3100", objectMapper);
+
+        DockerClient dockerClient = DockerClientFactory.createInstance();
+        DockerTaskRunner dockerRunner = new DockerTaskRunner(dockerClient, objectMapper);
+
+        TaskExecutor taskExecutor = new TaskExecutor(objectMapper, resultProducer, dockerRunner);
+
+        ParallelPipelineExecutor parallelPipelineExecutor = new ParallelPipelineExecutor(
+                objectMapper,
+                taskExecutor,
+                resultProducer,
+                4, 16, 100
+        );
+
+        PipelineAssignedConsumer pipelineAssignedConsumer = new PipelineAssignedConsumer(
                 "worker-service-group",
-                "pipeline-assigned-events"
-        ));
-        kafkaConsumerThread.setDaemon(false);
+                "pipeline-assigned-events",
+                objectMapper,
+                parallelPipelineExecutor
+        );
+
+        Thread kafkaConsumerThread = new Thread(pipelineAssignedConsumer);
         kafkaConsumerThread.start();
 
-        ObjectMapper objectMapper = new ObjectMapper();
-        LokiService.init("http://localhost:3100", objectMapper);
+        // Shutdown hook:
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            pipelineAssignedConsumer.shutdown();
+            try {
+                kafkaConsumerThread.join();
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                parallelPipelineExecutor.shutdown();
+                resultProducer.close();
+
+                try {
+                    dockerClient.close();
+                } catch (IOException e) {
+                    System.err.println("Error closing Docker client: " + e.getMessage());
+                }
+            }
+        }));
+    }
+
+    private static Properties setKafkaProducerProperties() {
+        Properties props = new Properties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, System.getenv().getOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"));
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+
+        props.put(ProducerConfig.ACKS_CONFIG, "all");
+        props.put(ProducerConfig.RETRIES_CONFIG, 3);
+        props.put(ProducerConfig.LINGER_MS_CONFIG, 5);
+        props.put(ProducerConfig.BATCH_SIZE_CONFIG, 32_768);    //32 KB batch size
+
+        return props;
     }
 }
 

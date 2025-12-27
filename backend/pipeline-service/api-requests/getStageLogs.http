@@ -1,0 +1,4 @@
+### GET request to example server
+GET http://localhost:8000/api/v1/logs/d4c62bf0-e600-4642-9481-903265a33951
+
+###

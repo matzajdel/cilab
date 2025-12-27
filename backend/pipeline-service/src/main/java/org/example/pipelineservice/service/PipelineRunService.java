@@ -1,6 +1,8 @@
 package org.example.pipelineservice.service;
 
 import lombok.RequiredArgsConstructor;
+import org.apache.kafka.common.errors.ResourceNotFoundException;
+import org.example.pipelineservice.exception.EntityNotFoundException;
 import org.example.pipelineservice.exception.PipelineNotFoundException;
 import org.example.pipelineservice.exception.PipelineRunException;
 import org.example.pipelineservice.kafka.PipelineAssignedProducer;
@@ -40,6 +42,17 @@ public class PipelineRunService {
     public PipelineRun getPipelineRunById(String runId) {
         return pipelineRunRepository.findByRunId(runId)
                 .orElseThrow(() -> new PipelineRunException("PipelineRun not found with runId: " + runId));
+    }
+
+    public StageRunInfo getStageRunInfo(String stageId) {
+        PipelineRun pipelineRun = pipelineRunRepository.findByStagesInfoStageId(stageId);
+
+        if (pipelineRun == null) throw new EntityNotFoundException("PipelineRun not found for stageId: " + stageId);
+
+        return pipelineRun.getStagesInfo().stream()
+                .filter(sri -> sri.getStageId().equals(stageId))
+                .findFirst()
+                .orElseThrow(() -> new EntityNotFoundException("StageRunInfo not found for stageId: " + stageId));
     }
 
     @Transactional

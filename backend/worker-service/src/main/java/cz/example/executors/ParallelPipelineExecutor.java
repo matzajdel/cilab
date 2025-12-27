@@ -10,15 +10,21 @@ import java.util.concurrent.*;
 
 public class ParallelPipelineExecutor {
     private final ExecutorService pipelineExecutorService;
-    private final TaskExecutor taskExecutor = new TaskExecutor();
-    private final ObjectMapper objectMapper = new ObjectMapper();
-    private final PipelineResultProducer pipelineResultProducer = new PipelineResultProducer();
+    private final TaskExecutor taskExecutor;
+    private final ObjectMapper objectMapper;
+    private final PipelineResultProducer pipelineResultProducer;
 
     public ParallelPipelineExecutor(
+            ObjectMapper objectMapper,
+            TaskExecutor taskExecutor,
+            PipelineResultProducer pipelineResultProducer,
             int corePool,
             int maxPool,
             int queueSize
     ) {
+        this.objectMapper = objectMapper;
+        this.taskExecutor = taskExecutor;
+        this.pipelineResultProducer = pipelineResultProducer;
         this.pipelineExecutorService = new ThreadPoolExecutor(
             corePool,
             maxPool,
@@ -46,5 +52,9 @@ public class ParallelPipelineExecutor {
                 throw new RuntimeException(e);
             }
         });
+    }
+
+    public void shutdown() {
+        pipelineExecutorService.shutdown();
     }
 }
