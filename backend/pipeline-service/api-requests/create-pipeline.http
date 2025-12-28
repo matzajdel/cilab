@@ -3,7 +3,7 @@ POST http://localhost:8000/api/v1/pipelines
 Content-Type: application/json
 
 {
-  "name": "first-pipeline",
+  "name": "redis-verification",
   "authorEmail": "mateusz.zajdel@aptiv.com",
   "parameters": [
     {
@@ -19,7 +19,7 @@ Content-Type: application/json
   "stages": [
     [
       {
-        "name": "firststage",
+        "name": "firststage-redis-2",
         "image": "busybox:latest",
         "stageEnvironment": {
           "stageEnvVariables": {
@@ -27,10 +27,10 @@ Content-Type: application/json
             "TARGET_PLATFORM": "x86_64"
           }
         },
-        "script": "echo \"Hello from stage1\" && sleep 8 && echo ${UPLOAD_ARTIFACTS} && echo ${HOME} && echo ${NETRC} && echo ${BUILD_TYPE}"
+        "script": "echo \"Hello from stage1\" && for i in $(seq 0 1000); do echo \"[STAGE1] Message nr: $i\"; sleep 1; done"
       },
       {
-        "name": "secondstage",
+        "name": "secondstage-redis",
         "image": "busybox:latest",
         "stageEnvironment": {
           "stageEnvVariables": {
@@ -38,7 +38,7 @@ Content-Type: application/json
             "TARGET_PLATFORM": "gcc11"
           }
         },
-        "script": "echo \"Hello from stage2\" && sleep 4 && echo ${UPLOAD_ARTIFACTS} && echo ${HOME} && echo ${NETRC}"
+        "script": "echo \"Hello from stage2\" && for i in $(seq 0 1000); do echo \"[STAGE2] Message nr: $i\"; sleep 1; done"
       }
     ]
   ],
@@ -46,6 +46,52 @@ Content-Type: application/json
     "Verified"
   ]
 }
+
+###
+//{
+//  "name": "first-pipeline",
+//  "authorEmail": "mateusz.zajdel@aptiv.com",
+//  "parameters": [
+//    {
+//      "name": "UPLOAD_ARTIFACTS",
+//      "defaultValue": "TRUE",
+//      "description": "Flag to upload build artifacts"
+//    }
+//  ],
+//  "envVariables": {
+//    "HOME": "/home/ci-user",
+//    "NETRC": ".pipelinenetrc"
+//  },
+//  "stages": [
+//    [
+//      {
+//        "name": "firststage",
+//        "image": "busybox:latest",
+//        "stageEnvironment": {
+//          "stageEnvVariables": {
+//            "BUILD_TYPE": "Release",
+//            "TARGET_PLATFORM": "x86_64"
+//          }
+//        },
+//        "script": "echo \"Hello from stage1\" && sleep 8 && echo ${UPLOAD_ARTIFACTS} && echo ${HOME} && echo ${NETRC} && echo ${BUILD_TYPE}"
+//      },
+//      {
+//        "name": "secondstage",
+//        "image": "busybox:latest",
+//        "stageEnvironment": {
+//          "stageEnvVariables": {
+//            "BUILD_TYPE": "Verification",
+//            "TARGET_PLATFORM": "gcc11"
+//          }
+//        },
+//        "script": "echo \"Hello from stage2\" && sleep 4 && echo ${UPLOAD_ARTIFACTS} && echo ${HOME} && echo ${NETRC}"
+//      }
+//    ]
+//  ],
+//  "labels": [
+//    "Verified"
+//  ]
+//}
 
 ###
 #{

@@ -14,6 +14,7 @@ import cz.example.loki.model.LogLineBody;
 import cz.example.pipeline.StageResultStatus;
 import cz.example.exception.DockerTaskException;
 import cz.example.pipeline.StageResult;
+import cz.example.redis.RedisLogPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.github.dockerjava.api.command.WaitContainerResultCallback;
@@ -30,10 +31,12 @@ public class DockerTaskRunner {
     private static final long LOG_WAIT_TIMEOUT_MIN = 60;
     private final DockerClient dockerClient;
     private final ObjectMapper objectMapper;
+    private final RedisLogPublisher redisLogPublisher;
 
-    public DockerTaskRunner(DockerClient dockerClient, ObjectMapper objectMapper) {
+    public DockerTaskRunner(DockerClient dockerClient, ObjectMapper objectMapper, RedisLogPublisher redisLogPublisher) {
         this.dockerClient = dockerClient;
         this.objectMapper = objectMapper;
+        this.redisLogPublisher = redisLogPublisher;
     }
 
     public StageResult runDockerTask(String stageId, String script, Map<String, String> envToSet, String image) {
@@ -136,7 +139,9 @@ public class DockerTaskRunner {
                                 resultEnvs.putAll(parseResultEnv(message));
                             } else {
                                 // TODO: exception handling
-                                queueLogToLoki(message, stageId);
+                                long tsNs = System.currentTimeMillis() * 1_000_000L;
+                                redisLogPublisher.publish(tsNs, message, stageId);
+                                queueLogToLoki(tsNs, message, stageId);
                             }
                         }
                     })
@@ -148,12 +153,13 @@ public class DockerTaskRunner {
         }
     }
 
-    private void queueLogToLoki(String message, String stageId) {
+    private void queueLogToLoki(Long tsNs, String message, String stageId) {
         LogLineBody logBody = new LogLineBody(stageId, message);
 
         try {
             String jsonBody = objectMapper.writeValueAsString(logBody);
-            LokiService.get().enqueueLog(jsonBody);
+
+            LokiService.get().enqueueLog(jsonBody, tsNs);
         } catch (JsonProcessingException e) {
             System.err.println("Serialization error: " + e.getMessage());
         }

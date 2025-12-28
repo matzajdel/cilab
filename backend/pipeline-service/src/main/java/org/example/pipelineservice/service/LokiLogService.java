@@ -8,6 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.pipelineservice.dto.LogEntryDto;
 import org.example.pipelineservice.model.pipelineRun.StageRunInfo;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.connection.MessageListener;
+import org.springframework.data.redis.listener.ChannelTopic;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -17,9 +20,14 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Service
 @Slf4j
@@ -29,17 +37,23 @@ public class LokiLogService {
     private final ExecutorService sseExecutor = Executors.newCachedThreadPool();
     private final int MAX_BATCH_SIZE = 1000;
     private final PipelineRunService pipelineRunService;
+    private final RedisMessageListenerContainer redisContainer;
+
+    private static final int MAX_LIVE_BUFFER_SIZE = 10000;
 
     public LokiLogService(
             ObjectMapper objectMapper,
             WebClient.Builder webClientBuilder,
             @Value("${loki.base-url:http://localhost:3100}") String lokiBaseUrl,
-            PipelineRunService pipelineRunService) {
+            PipelineRunService pipelineRunService,
+            RedisMessageListenerContainer redisContainer
+    ) {
         this.objectMapper = objectMapper;
         this.webClient = webClientBuilder
                 .baseUrl(lokiBaseUrl)
                 .build();
         this.pipelineRunService = pipelineRunService;
+        this.redisContainer = redisContainer;
     }
 
     public SseEmitter streamLogs(
@@ -47,34 +61,119 @@ public class LokiLogService {
     ) {
 
         StageRunInfo stageRunInfo = pipelineRunService.getStageRunInfo(stageId);
-        Instant startDate = stageRunInfo.getStartTime();
-        Instant endDate = stageRunInfo.getEndTime();
+        Instant startTime = stageRunInfo.getStartTime() == null
+                ? Instant.now()
+                : stageRunInfo.getStartTime();
 
         SseEmitter emitter = new SseEmitter(15 * 60 * 1000L);
 
-        sseExecutor.execute(() -> {
-           try {
-               fetchLogHistory(emitter, stageId, startDate, endDate);
-               emitter.complete();
-           } catch (Exception e) {
-               log.error("Error while streaming logs for stageId {}: {}", stageId, e.getMessage());
-               emitter.completeWithError(e);
-           }
-       });
+        Queue<LogEntryDto> liveBuffer = new ConcurrentLinkedDeque<>();
+        AtomicLong lastSentTs = new AtomicLong(0);
+        Object phaseLock = new Object();
+        AtomicBoolean isHistoryFetched = new AtomicBoolean(false);
+        AtomicInteger droppedCount = new AtomicInteger(0);
 
-       return emitter;
+        boolean isStageRunning = stageRunInfo.getEndTime() == null;
+        MessageListener redisListener = null;
+        if (isStageRunning) {
+            redisListener = (message, pattern) -> {
+                try {
+                    LogEntryDto logEntry = objectMapper.readValue(message.getBody(), LogEntryDto.class);
+
+                    synchronized (phaseLock) {
+                        if (!isHistoryFetched.get()) {
+                            if (liveBuffer.size() < MAX_LIVE_BUFFER_SIZE) {
+                                liveBuffer.add(logEntry);
+                            } else {
+                                if (droppedCount.incrementAndGet() % 100 == 0) {
+                                    liveBuffer.add(new LogEntryDto(
+                                            System.nanoTime(),
+                                            "[SYSTEM] Stream too fast. Some logs skipped to prevent browser crash. Refresh to see full history."
+                                    ));
+                                }
+                            }
+                        } else {
+                            System.out.println("[LIVE FROM REDIS]: " + logEntry);
+                            sendIfNew(emitter, logEntry, lastSentTs);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.error("Error processing Redis message: {}", e.getMessage());
+                }
+            };
+
+            redisContainer.addMessageListener(redisListener, new ChannelTopic("logs:stage:" + stageId));
+        }
+
+        // Variable using for cleanup
+        final MessageListener activeListener = redisListener;
+
+        sseExecutor.execute(() -> {
+            try {
+                Instant queryEnd = stageRunInfo.getEndTime() != null
+                        ? stageRunInfo.getEndTime()
+                        : Instant.now();
+
+                fetchLokiHistory(emitter, stageId, startTime, queryEnd, lastSentTs);
+
+                synchronized (phaseLock) {
+                    List<LogEntryDto> bufferAsList = new ArrayList<>(liveBuffer);
+                    bufferAsList.sort(Comparator.comparingLong(LogEntryDto::timestampNs));
+                    liveBuffer.clear();
+
+                    System.out.println("[BUFFER FROM REDSI]: " + bufferAsList);
+                    for (LogEntryDto bufferedLog : bufferAsList) {
+                        sendIfNew(emitter, bufferedLog, lastSentTs);
+                    }
+
+                    isHistoryFetched.set(true);
+                }
+
+                if (!isStageRunning) {
+                    emitter.complete();
+                }
+
+            } catch (Exception e) {
+                emitter.completeWithError(e);
+                if (activeListener != null) {
+                    redisContainer.removeMessageListener(activeListener);
+                }
+            }
+        });
+
+        Runnable cleanup = () -> {
+            if (activeListener != null) redisContainer.removeMessageListener(activeListener);
+        };
+        emitter.onCompletion(cleanup);
+        emitter.onTimeout(cleanup);
+        emitter.onError(e -> cleanup.run());
+
+        return emitter;
     }
 
-    private void fetchLogHistory(
+    private void sendIfNew(SseEmitter emitter, LogEntryDto logEntry, AtomicLong cursorTracker) {
+        if (logEntry.timestampNs() > cursorTracker.get()) {
+            try {
+                synchronized (emitter) {
+                    emitter.send(logEntry);
+                }
+                cursorTracker.set(logEntry.timestampNs());
+            } catch (IOException | IllegalStateException e) {
+                log.debug("Client disconnected while sending log: {}", e.getMessage());
+            }
+        }
+    }
+
+    private void fetchLokiHistory(
             SseEmitter emitter,
             String stageId,
-            Instant startDate,
-            Instant endDate
-//            AtomicLong cursorTracker
+            Instant startTime,
+            Instant endTime,
+            AtomicLong cursorTracker
     ) throws IOException {
-        long currentStartNs = startDate.minusSeconds(5).toEpochMilli() * 1_000_000L;
-        long endNs = endDate != null
-                ? endDate.plusSeconds(5).toEpochMilli() * 1_000_000L
+        long currentStartNs = startTime.minusSeconds(5).toEpochMilli() * 1_000_000L;
+        long endNs = endTime != null
+                ? endTime.plusSeconds(5).toEpochMilli() * 1_000_000L
                 : Instant.now().toEpochMilli() * 1_000_000L;
 
         while(true) {
@@ -121,9 +220,10 @@ public class LokiLogService {
 
             if (batch.isEmpty()) break;
 
+            System.out.println("[FROM LOKI]: " + batch);
             emitter.send(batch);
             long lastTimestampNs = batch.get(batch.size() - 1).timestampNs();
-//            cursorTracker.set(lastTimestampNs);
+            cursorTracker.set(lastTimestampNs);
 
             if (batch.size() < MAX_BATCH_SIZE) break; // No more logs to fetch
             currentStartNs = lastTimestampNs + 1;

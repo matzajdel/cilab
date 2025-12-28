@@ -68,9 +68,9 @@ public class LokiClient implements AutoCloseable {
         this.scheduler.scheduleAtFixedRate(this::flush, FLUSH_INTERVAL_MS, FLUSH_INTERVAL_MS, TimeUnit.MILLISECONDS);
     }
 
-    public void enqueueLog(String jsonBody) {
-        String timestampNs = String.valueOf(System.currentTimeMillis() * 1_000_000L);
-        if (!logQueue.offer(new LogEntry(timestampNs, jsonBody))) {
+    public void enqueueLog(String jsonBody, long timestampNs) {
+        String timestampStr = Long.toString(timestampNs);
+        if (!logQueue.offer(new LogEntry(timestampStr, jsonBody))) {
             System.err.println("Queue full, dropping log entry");
         }
     }

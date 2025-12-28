@@ -10,7 +10,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(EntityNotFoundException.class)
     public ResponseEntity<String> handlePipelineNotFoundException(
-            PipelineNotFoundException e
+            EntityNotFoundException e
     ) {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)

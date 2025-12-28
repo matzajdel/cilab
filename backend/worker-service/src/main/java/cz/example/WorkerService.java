@@ -14,6 +14,7 @@ import cz.example.pipeline.PipelineAssignedEvent;
 import cz.example.pipeline.PipelineResult;
 import cz.example.pipeline.Stage;
 import cz.example.pipeline.StageResultStatus;
+import cz.example.redis.RedisLogPublisher;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -34,10 +35,15 @@ public class WorkerService {
         KafkaProducer<String, String> kafkaProducer = new KafkaProducer<>(setKafkaProducerProperties());
         PipelineResultProducer resultProducer = new PipelineResultProducer(objectMapper, kafkaProducer);
 
+        RedisLogPublisher redisLogPublisher = new RedisLogPublisher(
+                objectMapper,
+                System.getenv().getOrDefault("REDIS_HOST", "localhost"),
+                Integer.parseInt(System.getenv().getOrDefault("REDIS_PORT", "6379"))
+        );
         LokiService.init("http://localhost:3100", objectMapper);
 
         DockerClient dockerClient = DockerClientFactory.createInstance();
-        DockerTaskRunner dockerRunner = new DockerTaskRunner(dockerClient, objectMapper);
+        DockerTaskRunner dockerRunner = new DockerTaskRunner(dockerClient, objectMapper, redisLogPublisher);
 
         TaskExecutor taskExecutor = new TaskExecutor(objectMapper, resultProducer, dockerRunner);
 
