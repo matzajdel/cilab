@@ -1,6 +1,7 @@
 package org.example.pipelineservice.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.example.pipelineservice.dto.PipelineRunSummaryDTO;
 import org.example.pipelineservice.model.pipelineRun.PipelineRun;
 import org.example.pipelineservice.service.PipelineRunService;
 import org.springframework.http.ResponseEntity;
@@ -27,7 +28,7 @@ public class PipelineRunController {
     }
 
     @GetMapping("/pipelines/{pipelineId}")
-    public ResponseEntity<List<PipelineRun>> getRunsByPipelineId(
+    public ResponseEntity<List<PipelineRunSummaryDTO>> getRunsByPipelineId(
             @PathVariable String pipelineId
     ) {
         return ResponseEntity

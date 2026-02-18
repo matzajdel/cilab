@@ -5,17 +5,31 @@ import lombok.RequiredArgsConstructor;
 import org.apache.kafka.common.errors.ResourceNotFoundException;
 import org.example.pipelineservice.dto.PipelineRequestDTO;
 import org.example.pipelineservice.dto.PipelineResponseDTO;
+import org.example.pipelineservice.dto.PipelineSummaryDTO;
 import org.example.pipelineservice.exception.PipelineNotFoundException;
 import org.example.pipelineservice.mapper.PipelineMapper;
 import org.example.pipelineservice.model.pipeline.Pipeline;
 import org.example.pipelineservice.repository.PipelineRepository;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class PipelineService {
     private final PipelineRepository pipelineRepository;
     private final PipelineMapper pipelineMapper;
+
+    public PipelineResponseDTO getPipelineInfo(String id) {
+        Pipeline pipeline = pipelineRepository.findById(id)
+                .orElseThrow(() -> new PipelineNotFoundException("Pipeline not found with id: " + id));
+
+        return pipelineMapper.toDTO(pipeline);
+    }
+
+    public List<PipelineSummaryDTO> getPipelineSummaries() {
+        return pipelineRepository.findAllPipelineSummaries();
+    }
 
     public Pipeline getPipelineById(String id) {
         return pipelineRepository.findById(id)

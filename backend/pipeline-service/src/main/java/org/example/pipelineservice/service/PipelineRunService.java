@@ -2,6 +2,7 @@ package org.example.pipelineservice.service;
 
 import lombok.RequiredArgsConstructor;
 import org.apache.kafka.common.errors.ResourceNotFoundException;
+import org.example.pipelineservice.dto.PipelineRunSummaryDTO;
 import org.example.pipelineservice.exception.EntityNotFoundException;
 import org.example.pipelineservice.exception.PipelineNotFoundException;
 import org.example.pipelineservice.exception.PipelineRunException;
@@ -10,6 +11,7 @@ import org.example.pipelineservice.kafka.events.PipelineAssignedEvent;
 import org.example.pipelineservice.kafka.events.PipelineResultEvent;
 import org.example.pipelineservice.kafka.events.StageAssignedEvent;
 import org.example.pipelineservice.kafka.events.StageResultEvent;
+import org.example.pipelineservice.mapper.PipelineRunMapper;
 import org.example.pipelineservice.model.pipeline.Pipeline;
 import org.example.pipelineservice.model.pipeline.PipelineParameter;
 import org.example.pipelineservice.model.pipeline.Stage;
@@ -33,10 +35,15 @@ public class PipelineRunService {
     private final PipelineRunRepository pipelineRunRepository;
     private final PipelineAssignedProducer pipelineAssignedProducer;
     private final PipelineService pipelineService;
+    private final PipelineRunMapper pipelineRunMapper;
 
-    public List<PipelineRun> getRunsByPipelineId(String pipelineId) {
-        return pipelineRunRepository.findPipelineRunsByPipelineId(pipelineId)
+    public List<PipelineRunSummaryDTO> getRunsByPipelineId(String pipelineId) {
+        List<PipelineRun> runs = pipelineRunRepository.findByPipelineId(pipelineId)
                 .orElseThrow(() -> new PipelineRunException("No runs found for pipelineId: " + pipelineId));
+
+        return runs.stream()
+                .map(pipelineRunMapper::toSummaryDTO)
+                .toList();
     }
 
     public PipelineRun getPipelineRunById(String runId) {
@@ -61,6 +68,10 @@ public class PipelineRunService {
                 .orElseThrow(() -> new PipelineRunException("PipelineRun document was not created"));//TODO
 
         run.setStatus(event.getStatus());
+        if (event.getStatus() == PipelineStatus.SUCCESSFUL || event.getStatus() == PipelineStatus.FAILED) {
+            run.setEndTime(new Date().toInstant());
+        }
+
         pipelineRunRepository.save(run);
     }
 
@@ -190,6 +201,7 @@ public class PipelineRunService {
                         .labels(labels)
                         .status(PipelineStatus.IN_PROGRESS)
                         .runBy(runByEmail)
+                        .startTime(new Date().toInstant())
                         .build()
         );
 
