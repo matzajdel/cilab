@@ -12,6 +12,7 @@ import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -49,11 +50,18 @@ public class LokiLogService {
             RedisMessageListenerContainer redisContainer
     ) {
         this.objectMapper = objectMapper;
-        this.webClient = webClientBuilder
-                .baseUrl(lokiBaseUrl)
-                .build();
         this.pipelineRunService = pipelineRunService;
         this.redisContainer = redisContainer;
+
+        final int bufferSize = 16 * 1024 * 1024;
+        final ExchangeStrategies strategies = ExchangeStrategies.builder()
+                .codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(bufferSize))
+                .build();
+
+        this.webClient = webClientBuilder
+                .baseUrl(lokiBaseUrl)
+                .exchangeStrategies(strategies)
+                .build();
     }
 
     public SseEmitter streamLogs(
