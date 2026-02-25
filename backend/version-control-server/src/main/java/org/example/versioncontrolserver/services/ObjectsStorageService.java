@@ -5,8 +5,15 @@ import jakarta.annotation.PostConstruct;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.example.versioncontrolserver.dto.CommitFileDTO;
 import org.example.versioncontrolserver.dto.CommitRequestDTO;
+import org.example.versioncontrolserver.dto.FileNodeDTO;
 import org.example.versioncontrolserver.dto.PullManifestDTO;
+import org.example.versioncontrolserver.entities.Branch;
+import org.example.versioncontrolserver.entities.Commit;
+import org.example.versioncontrolserver.repositories.BranchRepository;
+import org.example.versioncontrolserver.repositories.CommitRepository;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -16,6 +23,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
@@ -26,6 +37,9 @@ import java.util.zip.ZipOutputStream;
 public class ObjectsStorageService {
     private static final Path GLOBAL_OBJECTS_DIR = Paths.get("server-storage/global-objects");
     private final ObjectMapper objectMapper;
+
+    private final BranchRepository branchRepository;
+    private final CommitRepository commitRepository;
 
     @PostConstruct
     public void init() throws IOException {
@@ -104,5 +118,82 @@ public class ObjectsStorageService {
                 }
             }
         }
+    }
+
+    public List<FileNodeDTO> getBranchTree(String branchId) {
+        Branch branch = branchRepository.findById(Long.parseLong(branchId))
+                .orElseThrow(() -> new EntityNotFoundException("Branch with id: " + branchId + "not found"));
+
+        String headCommitId = branch.getHeadCommitId();
+
+        Commit commit = commitRepository.findById(headCommitId)
+                .orElseThrow(() -> new EntityNotFoundException("Head commit for branch does not exist"));
+
+        Map<String, String> flatFiles = commit.getFileMap();
+
+        return buildTree(flatFiles);
+    }
+
+    public List<FileNodeDTO> buildTree(Map<String, String> flatFiles) {
+        // Tu będziemy trzymać pliki i foldery z samego "korzenia" (root) repozytorium
+        List<FileNodeDTO> rootNodes = new ArrayList<>();
+
+        // Mapa pomocnicza, żebyśmy wiedzieli, czy dany folder już istnieje w drzewie
+        // Kluczem jest pełna ścieżka folderu (np. "src/main/java")
+        Map<String, FileNodeDTO> directoryCache = new HashMap<>();
+
+        for (Map.Entry<String, String> entry : flatFiles.entrySet()) {
+            String fullPath = entry.getKey();
+            String blobHash = entry.getValue();
+
+            // Ujednolicamy ukośniki na wypadek, gdyby klient używał Windowsa (\)
+            String normalizedPath = fullPath.replace("\\", "/");
+            String[] parts = normalizedPath.split("/");
+
+            FileNodeDTO parentDir = null;
+            String currentDirPath = "";
+
+            // Przechodzimy przez każdy segment ścieżki (np. ["src", "main", "Main.java"])
+            for (int i = 0; i < parts.length; i++) {
+                String part = parts[i];
+                boolean isLastPart = (i == parts.length - 1); // Jeśli to ostatni element, to jest to plik
+
+                if (isLastPart) {
+                    // --- TO JEST PLIK ---
+                    FileNodeDTO fileNode = new FileNodeDTO(part, normalizedPath, blobHash);
+
+                    if (parentDir != null) {
+                        parentDir.getChildren().add(fileNode); // Wrzucamy plik do folderu
+                    } else {
+                        rootNodes.add(fileNode); // Plik leży w głównym katalogu repozytorium
+                    }
+                } else {
+                    // --- TO JEST FOLDER ---
+                    // Budujemy ścieżkę tego konkretnego folderu
+                    currentDirPath = currentDirPath.isEmpty() ? part : currentDirPath + "/" + part;
+
+                    // Sprawdzamy, czy już wcześniej nie utworzyliśmy tego folderu
+                    FileNodeDTO dirNode = directoryCache.get(currentDirPath);
+
+                    if (dirNode == null) {
+                        // Tworzymy nowy folder
+                        dirNode = new FileNodeDTO(part, currentDirPath);
+                        directoryCache.put(currentDirPath, dirNode);
+
+                        // Podpinamy go pod rodzica (lub do korzenia)
+                        if (parentDir != null) {
+                            parentDir.getChildren().add(dirNode);
+                        } else {
+                            rootNodes.add(dirNode);
+                        }
+                    }
+
+                    // Ten folder staje się "rodzicem" dla następnego segmentu w pętli
+                    parentDir = dirNode;
+                }
+            }
+        }
+
+        return rootNodes;
     }
 }
