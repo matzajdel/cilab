@@ -7,10 +7,7 @@ import org.example.versioncontrolserver.dto.CommitSummaryDTO;
 import org.example.versioncontrolserver.dto.RepoDTO;
 import org.example.versioncontrolserver.services.RepositoryQueryService;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -23,6 +20,11 @@ public class RepositoryQueryController {
     @GetMapping("/repos")
     public List<RepoDTO> getAllRepositories() {
         return service.getAllRepositories();
+    }
+
+    @GetMapping("/commits")
+    public ResponseEntity<List<CommitSummaryDTO>> getLastCommitsByUser (@RequestParam String authorEmail) {
+        return ResponseEntity.ok(service.getLastCommitsByUser(authorEmail));
     }
 
     @GetMapping("/repos/{repoId}/commits")

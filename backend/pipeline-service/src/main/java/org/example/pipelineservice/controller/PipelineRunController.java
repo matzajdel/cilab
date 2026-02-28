@@ -19,7 +19,7 @@ public class PipelineRunController {
     @PostMapping("/pipelines/{pipelineId}")
     public ResponseEntity<String> runPipeline(
             @PathVariable String pipelineId,
-            @RequestParam String runnedByEmail,
+            @RequestParam(defaultValue = "mateusz.zajdel@cilab.com") String runnedByEmail,
             @RequestBody Map<String, String> parameters
     ) {
         service.runPipeline(pipelineId, runnedByEmail, parameters);
@@ -33,6 +33,13 @@ public class PipelineRunController {
     ) {
         return ResponseEntity
                 .ok(service.getRunsByPipelineId(pipelineId));
+    }
+
+    @GetMapping()
+    public ResponseEntity<List<PipelineRunSummaryDTO>> getRunsByUser(
+            @RequestParam String authorEmail
+    ) {
+        return ResponseEntity.ok(service.getRunsByUser(authorEmail));
     }
 
     @GetMapping("/{runId}")

@@ -13,6 +13,7 @@ import org.example.versioncontrolserver.repositories.BranchRepository;
 import org.example.versioncontrolserver.repositories.CommitRepository;
 import org.example.versioncontrolserver.repositories.RepoRepository;
 import org.example.versioncontrolserver.repositories.ReviewRequestRepository;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
@@ -43,6 +44,10 @@ public class RepositoryQueryService {
 
     public List<CommitSummaryDTO> getCommitsByRepository(String repoId) {
         return commitRepository.findAllByRepo_IdOrderByTimestampDesc(Long.parseLong(repoId));
+    }
+
+    public List<CommitSummaryDTO> getLastCommitsByUser(String authorEmail) {
+        return commitRepository.findFirst6AllByAuthorEmailOrderByTimestampDesc(authorEmail);
     }
 
     public List<BranchDTO> getBranchesByRepository(String repoId) {

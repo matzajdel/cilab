@@ -5,6 +5,7 @@ import org.example.versioncontrolserver.entities.Commit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -50,5 +51,8 @@ public interface CommitRepository extends JpaRepository<Commit, String> {
     int countInReviewAncestors(@Param("startId") String startId);
 
     List<CommitSummaryDTO> findAllByRepo_IdOrderByTimestampDesc(Long id);
+
     Optional<CommitSummaryDTO> findProjectedById(String id);
+
+    List<CommitSummaryDTO> findFirst6AllByAuthorEmailOrderByTimestampDesc(String authorEmail);
 }
