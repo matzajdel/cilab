@@ -1,0 +1,39 @@
+server:
+  port: ${SERVER_PORT:8000}
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowedOrigins: "*"
+                allowedMethods:
+                  - GET
+                  - POST
+                  - PUT
+                  - PATCH
+                  - DELETE
+                  - OPTIONS
+                allowedHeaders: "*"
+          routes:
+            - id: pipeline-service
+#              uri: http://pipeline-service:8001
+              uri: http://localhost:8001
+              predicates:
+                - Path=/api/v1/pipelines/**, /api/v1/runs/**, /api/v1/logs/**
+            - id: version-control-server
+#              uri: http://version-control-server:8002
+              uri: http://localhost:8002
+              predicates:
+                - Path=/api/v1/vcs/**
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

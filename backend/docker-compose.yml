@@ -4,13 +4,17 @@ services:
 # ============== Loki & Grafana ==============
   loki:
     image: grafana/loki:2.8.2
-    command: --config.file=/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/local-config.yaml -target=all
     ports:
       - "3100:3100"
+    networks:
+      - backend
   grafana:
     image: grafana/grafana:9.5.0
     ports:
-      - "3000:3000"
+      - "3001:3000"
+    networks:
+      - backend
     depends_on:
       - loki
 # ============== Kafka ==============
@@ -24,11 +28,17 @@ services:
       - "2181:2181"
     networks:
       - backend
+    healthcheck:
+      test: ["CMD", "cub", "zk-ready", "localhost:2181", "10"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
   kafka:
     image: confluentinc/cp-kafka:7.3.0
     container_name: kafka
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
@@ -41,6 +51,7 @@ services:
       - "9092:9092"
     networks:
       - backend
+    restart: on-failure
 # ============== MongoDB ==============
   mongo:
     image: mongo:7.0
@@ -52,6 +63,8 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: root
     ports:
       - "27017:27017"
+    networks:
+      - backend
     volumes:
       - mongo-data:/data/db
 
@@ -63,6 +76,8 @@ services:
       - mongo
     ports:
       - "8081:8081"
+    networks:
+      - backend
     environment:
       ME_CONFIG_MONGODB_SERVER: mongo
       ME_CONFIG_MONGODB_PORT: 27017
@@ -70,25 +85,138 @@ services:
       ME_CONFIG_MONGODB_ADMINPASSWORD: root
       ME_CONFIG_BASIC_AUTH_USERNAME: admin
       ME_CONFIG_BASIC_AUTH_PASSWORD: password
+# ============== Postgres =============
+  postgres:
+    image: postgres
+    container_name: control-version-database-postgres
+    ports:
+       - "5432:5432"
+    networks:
+      - backend
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: version_control_system
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d version_control_system"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    ports: 
+      - "5050:80"
+    networks:
+      - backend
+    depends_on: 
+      - postgres
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@pg.com
+      PGADMIN_DEFAULT_PASSWORD: admin
 # ============== Redis ==============
   redis:
     image: redis:alpine
     container_name: redis
     ports:
       - "6379:6379"
+    networks:
+      - backend
   redis-insight:
     image: redis/redisinsight:latest
     container_name: redis-insight
     ports:
       - "5540:5540"
+    networks:
+      - backend
     depends_on:
       - redis
     volumes:
       - redis_insight_data:/data
 
+# ======= MICROSERVICES =======
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway
+    ports:
+      - "8000:8000"
+    networks:
+      - backend
+    depends_on:
+      - pipeline-service
+      - version-control-server
+      - worker-service
+    environment:
+      - SERVER_PORT=8000
+  
+  pipeline-service:
+    build: ./pipeline-service
+    container_name: pipeline-service
+    expose:
+      - "8001"
+    networks:
+      - backend
+    depends_on:
+      - mongo
+      - kafka
+    environment:
+      - SERVER_PORT=8001
+      - MONGO_HOST=mongo
+      - MONGO_PORT=27017
+      - MONGO_USERNAME=root
+      - MONGO_PASSWORD=root
+      - MONGO_DATABASE=cilab_database
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - LOKI_BASE_URL=http://loki:3100
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+
+  version-control-server:
+    build: ./version-control-server
+    container_name: version-control-server
+    expose:
+      - "8002"
+    networks:
+      - backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - vcs_data_volume:/app/vcs-data
+    environment:
+      - SERVER_PORT=8002
+      - DB_URL=jdbc:postgresql://postgres:5432/version_control_system
+      - DB_USERNAME=admin
+      - DB_PASSWORD=admin
+      - VCS_STORAGE_PATH=/app/vcs-data/global-objects
+
+  worker-service:
+    build: ./worker-service
+    container_name: worker-service
+    expose:
+      - "8003"
+    networks:
+      - backend
+    depends_on:
+      - redis
+      - kafka
+      - grafana
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - LOKI_URL=http://loki:3100
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+
 volumes:
   mongo-data:
   redis_insight_data:
+  postgres_data:
+  vcs_data_volume:
 
 networks:
   backend:
