@@ -1,19 +1,14 @@
 package org.example.pipelineservice.service;
 
 import lombok.RequiredArgsConstructor;
-import org.apache.kafka.common.errors.ResourceNotFoundException;
 import org.example.pipelineservice.dto.PipelineRunSummaryDTO;
 import org.example.pipelineservice.exception.EntityNotFoundException;
-import org.example.pipelineservice.exception.PipelineNotFoundException;
 import org.example.pipelineservice.exception.PipelineRunException;
 import org.example.pipelineservice.kafka.PipelineAssignedProducer;
-import org.example.pipelineservice.kafka.events.PipelineAssignedEvent;
-import org.example.pipelineservice.kafka.events.PipelineResultEvent;
-import org.example.pipelineservice.kafka.events.StageAssignedEvent;
-import org.example.pipelineservice.kafka.events.StageResultEvent;
+import org.example.pipelineservice.kafka.PipelineResultProducer;
+import org.example.pipelineservice.kafka.events.*;
 import org.example.pipelineservice.mapper.PipelineRunMapper;
 import org.example.pipelineservice.model.pipeline.Pipeline;
-import org.example.pipelineservice.model.pipeline.PipelineParameter;
 import org.example.pipelineservice.model.pipeline.Stage;
 import org.example.pipelineservice.model.pipelineRun.PipelineRun;
 import org.example.pipelineservice.model.pipelineRun.PipelineStatus;
@@ -21,6 +16,10 @@ import org.example.pipelineservice.model.pipelineRun.StageRunInfo;
 import org.example.pipelineservice.model.pipelineRun.StageStatus;
 import org.example.pipelineservice.repository.PipelineRepository;
 import org.example.pipelineservice.repository.PipelineRunRepository;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,6 +35,10 @@ public class PipelineRunService {
     private final PipelineAssignedProducer pipelineAssignedProducer;
     private final PipelineService pipelineService;
     private final PipelineRunMapper pipelineRunMapper;
+    private final MongoTemplate mongoTemplate;
+    private final PipelineResultProducer resultProducer;
+
+    private static final String PIPELINE_VIEW_URL = System.getenv().getOrDefault("PIPELINE_VIEW_URL", "http://localhost:3000/pipelines");
 
     public List<PipelineRunSummaryDTO> getRunsByPipelineId(String pipelineId) {
         List<PipelineRun> runs = pipelineRunRepository.findByPipelineId(pipelineId)
@@ -62,40 +65,71 @@ public class PipelineRunService {
                 .orElseThrow(() -> new EntityNotFoundException("StageRunInfo not found for stageId: " + stageId));
     }
 
-    @Transactional
+//    @Transactional
     public void updatePipelineRunInfo(PipelineResultEvent event) {
-        PipelineRun run = pipelineRunRepository.findById(event.getPipelineRunId())
-                .orElseThrow(() -> new PipelineRunException("PipelineRun document was not created"));//TODO
+//        PipelineRun run = pipelineRunRepository.findById(event.getPipelineRunId())
+//                .orElseThrow(() -> new PipelineRunException("PipelineRun document was not created"));//TODO
+//
+//        run.setStatus(event.getStatus());
+//        if (event.getStatus() == PipelineStatus.SUCCESSFUL || event.getStatus() == PipelineStatus.FAILED) {
+//            run.setEndTime(new Date().toInstant());
+//        }
+//
+//        pipelineRunRepository.save(run);
 
-        run.setStatus(event.getStatus());
+        Query query = new Query(Criteria.where("_id").is(event.getPipelineRunId()));
+
+        Update update = new Update()
+                .set("status", event.getStatus());
+
         if (event.getStatus() == PipelineStatus.SUCCESSFUL || event.getStatus() == PipelineStatus.FAILED) {
-            run.setEndTime(new Date().toInstant());
+            update.set("endTime", new Date().toInstant());
+            handleLabel(event);
         }
 
-        pipelineRunRepository.save(run);
+        mongoTemplate.updateFirst(query, update, PipelineRun.class);
+        sendStatusMessage(event);
     }
 
-    @Transactional
+    private void handleLabel(PipelineResultEvent event) {
+        Optional<String> commitId = pipelineRunRepository.findOnlyCommitIdById(event.getPipelineRunId());
+        if (commitId.isEmpty()) return;
+
+        int labelValue = (event.getStatus() == PipelineStatus.SUCCESSFUL ? 1 : 0);
+        LabelEvent labelEvent = new LabelEvent("Verified", labelValue, commitId.get());
+        resultProducer.publishLabelEvent(labelEvent);
+    }
+
+    private void sendStatusMessage(PipelineResultEvent event) {
+        Optional<String> commitId = pipelineRunRepository.findOnlyCommitIdById(event.getPipelineRunId());
+        if (commitId.isEmpty()) return;
+
+        String viewJobUrl = PIPELINE_VIEW_URL + "/" + event.getPipelineRunId();
+        String message = event.getStatus() == PipelineStatus.SUCCESSFUL
+                ? "Pipeline finished successfully: " + viewJobUrl
+                : event.getStatus() == PipelineStatus.FAILED
+                    ? "Pipeline failed: " + viewJobUrl
+                    : "Pipeline in progress: " + viewJobUrl;
+
+        MessageEvent messageEvent = new MessageEvent(message, "sid-pipeline-cilab@mail.com", commitId.get());
+        resultProducer.publishMessageEvent(messageEvent);
+    }
+
     public void updateStageRunInfo(StageResultEvent event) {
-        PipelineRun run = pipelineRunRepository.findByStagesInfoStageId(event.getStageId());
-
-        StageRunInfo stageInfo = run.getStagesInfo().stream()
-                .filter(sri -> sri.getStageId().equals(event.getStageId()))
-                .findFirst()
-                .orElseThrow(() -> new PipelineRunException("StageRunInfo not found for stageId: " + event.getStageId()));
-
-        stageInfo.setStatus(event.getStatus());
-        stageInfo.setResultEnvs(event.getResultEnvs());
-        stageInfo.setMessage(event.getMessage());
+        Query query = new Query(Criteria.where("stagesInfo.stageId").is(event.getStageId()));
+        Update update = new Update()
+                .set("stagesInfo.$.status", event.getStatus())
+                .set("stagesInfo.$.resultEnvs", event.getResultEnvs())
+                .set("stagesInfo.$.message", event.getMessage());
 
         if (event.getStartTime() != null) {
-            stageInfo.setStartTime(event.getStartTime());
+            update.set("stagesInfo.$.startTime", event.getStartTime());
         }
         if (event.getEndTime() != null) {
-            stageInfo.setEndTime(event.getEndTime());
+            update.set("stagesInfo.$.endTime", event.getEndTime());
         }
 
-        pipelineRunRepository.save(run);
+        mongoTemplate.updateFirst(query, update, PipelineRun.class);
     }
 
     @Transactional
@@ -129,12 +163,17 @@ public class PipelineRunService {
     }
 
     private Map<String, String> mergeParameters(Pipeline pipeline, Map<String, String> userParameters) {
-        Map<String, String> parameters = new HashMap<>(pipeline.getParameters().stream()
-                .collect(Collectors.toMap(
-                        PipelineParameter::getName,
-                        PipelineParameter::getDefaultValue
-                )));
-        parameters.putAll(userParameters);
+        Map<String, String> parameters = new HashMap<>();
+
+        if (pipeline.getParameters() != null) {
+            pipeline.getParameters().forEach(param -> {
+                parameters.put(param.getName(), param.getDefaultValue());
+            });
+        }
+
+        if (userParameters != null) {
+            parameters.putAll(userParameters);
+        }
 
         return parameters;
     }
@@ -199,7 +238,7 @@ public class PipelineRunService {
                         .envVariables(pipeline.getEnvVariables())
                         .stagesInfo(stagesInfo)
                         .labels(labels)
-                        .status(PipelineStatus.IN_PROGRESS)
+                        .status(PipelineStatus.WAITING)
                         .runBy(runByEmail)
                         .startTime(new Date().toInstant())
                         .build()
@@ -231,5 +270,9 @@ public class PipelineRunService {
         );
 
         return script.append(stage.getScript()).toString();
+    }
+
+    public List<PipelineRunSummaryDTO> getRunsByUser(String authorEmail) {
+        return pipelineRunRepository.findTop6AllByRunByOrderByStartTimeDesc(authorEmail);
     }
 }

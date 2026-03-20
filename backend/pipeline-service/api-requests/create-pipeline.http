@@ -3,42 +3,34 @@ POST http://localhost:8000/api/v1/pipelines
 Content-Type: application/json
 
 {
-  "name": "redis-verification",
+  "name": "verify-test-job-2",
   "authorEmail": "mateusz.zajdel@aptiv.com",
   "parameters": [
     {
       "name": "UPLOAD_ARTIFACTS",
       "defaultValue": "TRUE",
       "description": "Flag to upload build artifacts"
+    },
+    {
+      "name": "COMMIT_ID",
+      "description": "Commit that be pulled"
     }
   ],
   "envVariables": {
-    "HOME": "/home/ci-user",
     "NETRC": ".pipelinenetrc"
   },
   "stages": [
     [
       {
         "name": "firststage-redis-2",
-        "image": "busybox:latest",
+        "image": "vcs-client-image",
         "stageEnvironment": {
           "stageEnvVariables": {
             "BUILD_TYPE": "Release",
             "TARGET_PLATFORM": "x86_64"
           }
         },
-        "script": "echo \"Hello from stage1\" && for i in $(seq 0 1000); do echo \"[STAGE1] Message nr: $i\"; sleep 1; done"
-      },
-      {
-        "name": "secondstage-redis",
-        "image": "busybox:latest",
-        "stageEnvironment": {
-          "stageEnvVariables": {
-            "BUILD_TYPE": "Verification",
-            "TARGET_PLATFORM": "gcc11"
-          }
-        },
-        "script": "echo \"Hello from stage2\" && for i in $(seq 0 1000); do echo \"[STAGE2] Message nr: $i\"; sleep 1; done"
+        "script": "mkdir ~/repo && cd ~/repo && myvcs clone verifiy-test && myvcs checkout-review $COMMIT_ID && myvcs log && chmod +x ./build.sh && ./build.sh"
       }
     ]
   ],
@@ -46,6 +38,7 @@ Content-Type: application/json
     "Verified"
   ]
 }
+
 
 ###
 //{

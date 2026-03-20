@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class PipelineAssignedProducer {
     private static final String TOPIC = "pipeline-assigned-events";
-    private final KafkaTemplate<String, PipelineAssignedEvent> kafkaTemplate;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
 
     public void publish (PipelineAssignedEvent event) {
         String key = event.getPipelineId().toString();

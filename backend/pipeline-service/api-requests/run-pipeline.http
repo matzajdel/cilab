@@ -1,5 +1,5 @@
 ### GET request to example server
-POST http://localhost:8000/api/v1/runs/pipelines/6951263c31a054c5bb37158e?runnedByEmail=mateusz.zajdel@aptiv.com
+POST http://localhost:8000/api/v1/runs/pipelines/699342c33b0cb698470ad76c?runnedByEmail=mateusz.zajdel@aptiv.com
 Content-Type: application/json
 
 {}

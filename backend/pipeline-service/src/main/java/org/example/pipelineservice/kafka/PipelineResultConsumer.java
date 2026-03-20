@@ -20,7 +20,7 @@ public class PipelineResultConsumer {
 
     @KafkaListener(
             topics = "pipeline-result-events",
-            groupId = "pipeline-service-group",
+            groupId = "pipeline-service-pipeline-result-group",
             containerFactory = "pipelineResultContainerFactory"
     )
     public void consumePipelineResult(PipelineResultEvent event, Acknowledgment ack) throws JsonProcessingException {
@@ -31,7 +31,7 @@ public class PipelineResultConsumer {
 
     @KafkaListener(
             topics = "stage-result-events",
-            groupId = "pipeline-service-group",
+            groupId = "pipeline-service-stage-result-group",
             containerFactory = "stageResultContainerFactory"
     )
     public void consumeStageResult(StageResultEvent event, Acknowledgment ack) throws JsonProcessingException {

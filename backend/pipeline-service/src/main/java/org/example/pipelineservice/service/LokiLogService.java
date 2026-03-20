@@ -163,7 +163,11 @@ public class LokiLogService {
         if (logEntry.timestampNs() > cursorTracker.get()) {
             try {
                 synchronized (emitter) {
-                    emitter.send(logEntry);
+//                    emitter.send(logEntry);
+                    emitter.send(SseEmitter.event()
+                            .name("message") // Nazwa eventu, której nasłuchuje frontend
+                            .data(logEntry)  // Spring sam zserializuje to do JSON
+                    );
                 }
                 cursorTracker.set(logEntry.timestampNs());
             } catch (IOException | IllegalStateException e) {
@@ -229,7 +233,10 @@ public class LokiLogService {
             if (batch.isEmpty()) break;
 
             System.out.println("[FROM LOKI]: " + batch);
-            emitter.send(batch);
+//            emitter.send(batch);
+            emitter.send(SseEmitter.event()
+                    .name("message")
+                    .data(batch));
             long lastTimestampNs = batch.get(batch.size() - 1).timestampNs();
             cursorTracker.set(lastTimestampNs);
 
