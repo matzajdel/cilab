@@ -1,0 +1,21 @@
+1) PipelineInfo:
+transactions-account
+transactions-account-balance
+
+2) PipelineParametersForm
+payment-transfer_form-item
+payment-transfer_form-content
+payment-transfer_btn-box
+payment-transfer_btn
+
+3) CommitInfo
+transactions-account
+
+4) RecentActivity
+recent-transactions
+recent-transactions-label
+recent-transactions-tablist
+banktab-item cursor-pointer
+
+5) RightSidebar
+banks
