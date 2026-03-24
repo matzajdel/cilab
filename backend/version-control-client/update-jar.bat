@@ -4,7 +4,7 @@ echo ==========================================
 echo 1. Building new version (Maven)...
 echo ==========================================
 
-cd /d "C:\Users\mateu\Desktop\CILab\cilab\version-control-client"
+cd /d "C:\Users\mateu\Desktop\CILab\cilab\backend\version-control-client"
 call mvn clean package
 
 if errorlevel 1 (

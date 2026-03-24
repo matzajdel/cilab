@@ -24,6 +24,7 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_4LW_COMMANDS_WHITELIST: "ruok,stat"
     ports:
       - "2181:2181"
     networks:
@@ -135,7 +136,39 @@ services:
       - redis
     volumes:
       - redis_insight_data:/data
+  # ============== Keycloak ==============
+  keycloak-db:
+    image: postgres:15
+    container_name: keycloak-db
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_password
+    networks:
+      - backend
+    volumes:
+      - keycloak_pg_data:/var/lib/postgresql/data # <-- To gwarantuje trwałość danych!
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.1
+    container_name: keycloak
+    command: start-dev --import-realm
+    depends_on:
+      - keycloak-db # Czekamy aż baza wstanie
+    ports:
+      - "8085:8080"
+    networks:
+      - backend
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      # 2. Mówimy Keycloakowi, żeby użył naszej bazy Postgres
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://keycloak-db:5432/keycloak
+      - KC_DB_USERNAME=keycloak
+      - KC_DB_PASSWORD=keycloak_password
+    volumes:
+      - ./keycloak/realm.json:/opt/keycloak/data/import/realm.json
 # ======= MICROSERVICES =======
   api-gateway:
     build: ./api-gateway
@@ -191,6 +224,7 @@ services:
       - DB_USERNAME=admin
       - DB_PASSWORD=admin
       - VCS_STORAGE_PATH=/app/vcs-data/global-objects
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
 
   worker-service:
     build: ./worker-service
@@ -217,6 +251,7 @@ volumes:
   redis_insight_data:
   postgres_data:
   vcs_data_volume:
+  keycloak_pg_data:
 
 networks:
   backend:
