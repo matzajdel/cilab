@@ -22,15 +22,21 @@ spring:
                 allowedHeaders: "*"
           routes:
             - id: pipeline-service
-#              uri: http://pipeline-service:8001
-              uri: http://localhost:8001
+              uri: http://pipeline-service:8001
+#              uri: http://localhost:8001
               predicates:
                 - Path=/api/v1/pipelines/**, /api/v1/runs/**, /api/v1/logs/**
             - id: version-control-server
-#              uri: http://version-control-server:8002
-              uri: http://localhost:8002
+              uri: http://version-control-server:8002
+#              uri: http://localhost:8002
               predicates:
                 - Path=/api/v1/vcs/**
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://keycloak:8080/realms/cilab-realm/protocol/openid-connect/certs
+          issuer-uri: http://localhost:8085/realms/cilab-realm
 
 management:
   endpoints:
