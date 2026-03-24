@@ -1,0 +1,87 @@
+# ------------------------------
+# OS / system files
+# ------------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ------------------------------
+# Editor / IDE
+# ------------------------------
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+.classpath
+.project
+.settings/
+.factorypath
+.apt_generated/
+.springBeans
+.sts4-cache/
+
+# ------------------------------
+# Logs / temp
+# ------------------------------
+*.log
+logs/
+tmp/
+temp/
+
+# ------------------------------
+# Environment / secrets
+# ------------------------------
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+
+# ------------------------------
+# Node / Next.js (frontend)
+# ------------------------------
+frontend/node_modules/
+frontend/.pnp/
+frontend/.pnp.js
+frontend/.yarn/install-state.gz
+
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/coverage/
+frontend/.vercel/
+
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
+
+# ------------------------------
+# Java / Maven (backend)
+# ------------------------------
+backend/**/target/
+backend/**/build/
+backend/**/.mvn/timing.properties
+
+# Keep Maven wrapper binary tracked
+!backend/**/.mvn/wrapper/maven-wrapper.jar
+
+# Common generated directories
+backend/**/generated-sources/
+backend/**/generated-test-sources/
+backend/**/test-classes/
+backend/**/maven-status/
+backend/**/maven-archiver/
+
+# Runtime/local service data
+backend/**/server-storage/
+
+# ------------------------------
+# Docker / compose local overrides
+# ------------------------------
+**/.docker/
+docker-compose.override.yml
