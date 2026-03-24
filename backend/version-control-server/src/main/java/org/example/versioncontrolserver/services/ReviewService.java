@@ -1,7 +1,9 @@
 package org.example.versioncontrolserver.services;
 
 import lombok.RequiredArgsConstructor;
+import org.example.versioncontrolserver.dto.MessageDTO;
 import org.example.versioncontrolserver.entities.*;
+import org.example.versioncontrolserver.exception.SubmitRejectedException;
 import org.example.versioncontrolserver.mapper.CommitFileMapper;
 import org.example.versioncontrolserver.mapper.CommitMapper;
 import org.example.versioncontrolserver.repositories.BranchRepository;
@@ -24,6 +26,8 @@ public class ReviewService {
     private final BranchRepository branchRepository;
     private final ReviewRequestRepository reviewRequestRepository;
 
+    private final RepositoryQueryService repositoryQueryService;
+
     public void createReviewRequest(String commitId, String realTargetBranch, String message) {
         if (reviewRequestRepository.findByCommitId(commitId).isEmpty()) {
             reviewRequestRepository.save(
@@ -37,27 +41,28 @@ public class ReviewService {
     }
 
     @Transactional
-    public void submitReview(String repoName, String commitId) throws IOException {
-        Repo repo = repoRepository.findByName(repoName)
-                .orElseThrow(() -> new IOException("Repo not found: " + repoName));
+    public void submitReview(String commitId, String authorEmail) throws SubmitRejectedException {
+        Commit commit = commitRepository.findById(commitId)
+                .orElseThrow(() -> new IllegalArgumentException("Commit not found for commit: " + commitId));
+        
+        checkLabels(commit.getLabels());
+        
+        Repo repo = commit.getRepo();
 
         ReviewRequest request = reviewRequestRepository.findByCommitId(commitId)
                 .orElseThrow(() -> new IllegalArgumentException("Review request not found for commit: " + commitId));
 
-        Commit commit = commitRepository.findById(commitId)
-                .orElseThrow(() -> new IllegalArgumentException("Commit not found for commit: " + commitId));
+
         commit.setStatus(CommitStatus.MERGED);
         commitRepository.save(commit);
 
         String targetBranchName = request.getTargetBranch();;
 
         Branch branch = branchRepository.findByRepoAndName(repo, targetBranchName)
-                .orElseGet(() -> {
-                    return Branch.builder()
-                            .name(targetBranchName)
-                            .repo(repo)
-                            .build();
-                });
+                .orElseGet(() -> Branch.builder()
+                        .name(targetBranchName)
+                        .repo(repo)
+                        .build());
 
         String currentHeadId = branch.getHeadCommitId();
 
@@ -77,7 +82,22 @@ public class ReviewService {
         branchRepository.save(branch);
 
         reviewRequestRepository.delete(request);
+
+        repositoryQueryService.saveMessage(MessageDTO.builder()
+                .text("User " + authorEmail + " rebased change")
+                .authorEmail(authorEmail)
+                .commitId(commitId)
+                .build());
+
         System.out.println("Submitted review " + commitId + " to branch " + targetBranchName);
+    }
+
+    private void checkLabels(List<Label> labels) throws SubmitRejectedException {
+        for (Label label : labels) {
+            if (label.getValue() < 1) {
+                throw new SubmitRejectedException("Check labels aren't set");
+            }
+        }
     }
 
     private boolean isFastForward(String descendantId, String ancestorId) {
@@ -88,12 +108,11 @@ public class ReviewService {
     }
 
     @Transactional
-    public String rebase(String repoName, String rebasedCommitId, String targetBranchName) {
-        Repo repo = repoRepository.findByName(repoName)
-                .orElseThrow(() -> new IllegalArgumentException("Repo not found: " + repoName));
-
+    public String rebase(String rebasedCommitId, String targetBranchName, String authorEmail) {
         Commit rebasedCommit = commitRepository.findById(rebasedCommitId)
                 .orElseThrow(() -> new IllegalArgumentException("Commit object not found: " + rebasedCommitId));
+
+        Repo repo = rebasedCommit.getRepo();
 
         Branch branch = branchRepository.findByName(targetBranchName)
                 .orElseThrow(() -> new IllegalArgumentException("Target branch '" + targetBranchName + "' does not exist"));
@@ -154,7 +173,7 @@ public class ReviewService {
                 .message(rebasedCommit.getMessage())
                 .parentId(upstreamHeadId)
                 .authorEmail(rebasedCommit.getAuthorEmail())
-                .branchName(rebasedCommit.getBranchName())
+                .branch(rebasedCommit.getBranch())
                 .status(rebasedCommit.getStatus())
                 .build();
         // TODO: adding author
@@ -173,6 +192,12 @@ public class ReviewService {
         request.setCommitId(newCommitId);
         request.setTargetBranch(targetBranchName);
         reviewRequestRepository.save(request);
+
+        repositoryQueryService.saveMessage(MessageDTO.builder()
+                .text("User " + authorEmail + " rebased change")
+                .authorEmail(authorEmail)
+                .commitId(newCommitId)
+                .build());
 
         System.out.println("Rebased " + rebasedCommitId + " -> " + newCommitId + " onto " + targetBranchName);
         return newCommitId;

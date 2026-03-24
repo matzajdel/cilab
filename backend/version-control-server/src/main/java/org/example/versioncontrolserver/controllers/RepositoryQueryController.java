@@ -1,10 +1,7 @@
 package org.example.versioncontrolserver.controllers;
 
 import lombok.RequiredArgsConstructor;
-import org.example.versioncontrolserver.dto.BranchDTO;
-import org.example.versioncontrolserver.dto.CommitFileDTO;
-import org.example.versioncontrolserver.dto.CommitSummaryDTO;
-import org.example.versioncontrolserver.dto.RepoDTO;
+import org.example.versioncontrolserver.dto.*;
 import org.example.versioncontrolserver.services.RepositoryQueryService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -16,6 +13,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class RepositoryQueryController {
     private final RepositoryQueryService service;
+    private final RepositoryQueryService repositoryQueryService;
 
     @GetMapping("/repos")
     public List<RepoDTO> getAllRepositories() {
@@ -33,7 +31,7 @@ public class RepositoryQueryController {
     }
 
     @GetMapping("/commits/{commitId}")
-    public ResponseEntity<CommitSummaryDTO> getCommitById(@PathVariable String commitId) {
+    public ResponseEntity<CommitDetailsDTO> getCommitById(@PathVariable String commitId) {
         return ResponseEntity.ok(service.getCommitById(commitId));
     }
 
@@ -50,5 +48,14 @@ public class RepositoryQueryController {
     @GetMapping("/commits/{commitId}/diff")
     public ResponseEntity<List<CommitFileDTO>> getDiffFilesByCommit(@PathVariable String commitId) {
         return ResponseEntity.ok(service.getDiffFilesByCommit(commitId));
+    }
+
+    @PostMapping("/labels")
+    public ResponseEntity<Void> saveLabel(
+            @RequestBody LabelDTO dto,
+            @RequestHeader("X-User-Email") String authorEmail
+    ) {
+        repositoryQueryService.saveLabel(dto, authorEmail);
+        return ResponseEntity.ok().build();
     }
 }

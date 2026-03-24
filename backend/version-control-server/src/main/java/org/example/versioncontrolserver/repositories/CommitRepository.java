@@ -1,5 +1,6 @@
 package org.example.versioncontrolserver.repositories;
 
+import org.example.versioncontrolserver.dto.CommitDetailsDTO;
 import org.example.versioncontrolserver.dto.CommitSummaryDTO;
 import org.example.versioncontrolserver.entities.Commit;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -52,7 +53,7 @@ public interface CommitRepository extends JpaRepository<Commit, String> {
 
     List<CommitSummaryDTO> findAllByRepo_IdOrderByTimestampDesc(Long id);
 
-    Optional<CommitSummaryDTO> findProjectedById(String id);
+    Optional<Commit> findCommitDetailsById(String id);
 
     List<CommitSummaryDTO> findFirst6AllByAuthorEmailOrderByTimestampDesc(String authorEmail);
 }

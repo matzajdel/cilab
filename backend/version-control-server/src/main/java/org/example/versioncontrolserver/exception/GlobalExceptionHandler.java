@@ -1,5 +1,6 @@
 package org.example.versioncontrolserver.exception;
 
+import jakarta.persistence.EntityNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -28,6 +29,20 @@ public class GlobalExceptionHandler {
     public ResponseEntity<String> handlePushRejectedException(PushRejectedException ex) {
         return ResponseEntity
                 .status(HttpStatus.CONFLICT) // 409
+                .body(ex.getMessage());
+    }
+
+    @ExceptionHandler(EntityNotFoundException.class)
+    public ResponseEntity<String> handleEntityNotFoundException(EntityNotFoundException ex) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ex.getMessage());
+    }
+
+    @ExceptionHandler(SubmitRejectedException.class)
+    public ResponseEntity<String> handleSubmitRejectedException(SubmitRejectedException ex) {
+        return ResponseEntity
+                .status(HttpStatus.UNPROCESSABLE_CONTENT)
                 .body(ex.getMessage());
     }
 }

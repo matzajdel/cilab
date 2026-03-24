@@ -3,20 +3,16 @@ package org.example.versioncontrolserver.services;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.example.versioncontrolserver.dto.*;
-import org.example.versioncontrolserver.entities.Branch;
 import org.example.versioncontrolserver.entities.Commit;
-import org.example.versioncontrolserver.entities.CommitStatus;
-import org.example.versioncontrolserver.entities.Repo;
+import org.example.versioncontrolserver.dto.LabelDTO;
+import org.example.versioncontrolserver.dto.MessageDTO;
 import org.example.versioncontrolserver.mapper.CommitFileMapper;
 import org.example.versioncontrolserver.mapper.CommitMapper;
-import org.example.versioncontrolserver.repositories.BranchRepository;
-import org.example.versioncontrolserver.repositories.CommitRepository;
-import org.example.versioncontrolserver.repositories.RepoRepository;
-import org.example.versioncontrolserver.repositories.ReviewRequestRepository;
-import org.springframework.http.ResponseEntity;
+import org.example.versioncontrolserver.mapper.LabelMapper;
+import org.example.versioncontrolserver.mapper.MessageMapper;
+import org.example.versioncontrolserver.repositories.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 import java.util.Map;
@@ -26,20 +22,27 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class RepositoryQueryService {
 
-    private final CommitMapper commitMapper;
     private final CommitFileMapper commitFileMapper;
+    private final LabelMapper labelMapper;
+    private final MessageMapper messageMapper;
 
     private final RepoRepository repoRepository;
     private final CommitRepository commitRepository;
     private final BranchRepository branchRepository;
 
+    private final MessageRepository messageRepository;
+    private final LabelRepository labelRepository;
+    private final CommitMapper commitMapper;
+
     public List<RepoDTO> getAllRepositories() {
         return repoRepository.findAllBy();
     }
 
-    public CommitSummaryDTO getCommitById(String commitId) {
-        return commitRepository.findProjectedById(commitId)
+    public CommitDetailsDTO getCommitById(String commitId) {
+        Commit commit = commitRepository.findCommitDetailsById(commitId)
                 .orElseThrow(() -> new EntityNotFoundException("Not found commit with id: " + commitId));
+
+        return commitMapper.toCommitDetailsDTO(commit);
     }
 
     public List<CommitSummaryDTO> getCommitsByRepository(String repoId) {
@@ -79,5 +82,29 @@ public class RepositoryQueryService {
                 })
                 .map(commitFileMapper::toDTO)
                 .toList();
+    }
+
+    public void saveLabel(LabelDTO label, String authorEmail) {
+        Commit commitProxy = commitRepository.getReferenceById(label.getCommitId());
+
+        labelRepository.findByCommitIdAndName(label.getCommitId(), label.getName())
+                .ifPresentOrElse(
+                        existingLabel -> {
+                            existingLabel.setValue(label.getValue());
+                            labelRepository.save(existingLabel);
+                        },
+                        () -> labelRepository.save(labelMapper.toEntity(label, commitProxy, authorEmail))
+                );
+
+        saveMessage(MessageDTO.builder()
+                .text("User " + authorEmail + " marked label " + label.getName() + " as: " + label.getValue())
+                .authorEmail(authorEmail)
+                .commitId(label.getCommitId())
+                .build());
+    }
+
+    public void saveMessage(MessageDTO message) {
+        Commit commitProxy = commitRepository.getReferenceById(message.getCommitId());
+        messageRepository.save(messageMapper.toEntity(message, commitProxy));
     }
 }

@@ -23,7 +23,11 @@ public class Commit {
     private String parentId;
     private String secondParentId;
     private String authorEmail;
-    private String branchName;
+//    private String branchName;
+
+    @ManyToOne
+    @JoinColumn(name = "branch_id")
+    private Branch branch;
 
     @Enumerated(EnumType.STRING)
     private CommitStatus status;
@@ -32,9 +36,18 @@ public class Commit {
     @JoinColumn(name = "repository_id")
     private Repo repo;
 
+    @OneToMany(mappedBy = "commit", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Message> messages;
+
+    @OneToMany(mappedBy = "commit", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Label> labels;
+
     @OneToMany(mappedBy = "commit", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     private List<CommitFile> files = new ArrayList<>();
+
+    public Commit(String commitId) {
+    }
 
     public void addFile(String path, String hash) {
         CommitFile file = CommitFile.builder()

@@ -35,7 +35,7 @@ import java.util.zip.ZipOutputStream;
 @Service
 @RequiredArgsConstructor
 public class ObjectsStorageService {
-    private static final Path GLOBAL_OBJECTS_DIR = Paths.get("server-storage/global-objects");
+    private static final Path GLOBAL_OBJECTS_DIR = Paths.get(System.getenv().getOrDefault("VCS_STORAGE_PATH", "server-storage/global-objects"));
     private final ObjectMapper objectMapper;
 
     private final BranchRepository branchRepository;

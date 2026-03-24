@@ -1,19 +1,20 @@
 package org.example.versioncontrolserver.services;
 
+import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.versioncontrolserver.dto.CommitRequestDTO;
 import org.example.versioncontrolserver.dto.PullManifestDTO;
 import org.example.versioncontrolserver.dto.PushRequestDTO;
-import org.example.versioncontrolserver.entities.Branch;
-import org.example.versioncontrolserver.entities.Commit;
-import org.example.versioncontrolserver.entities.CommitStatus;
-import org.example.versioncontrolserver.entities.Repo;
+import org.example.versioncontrolserver.dto.RunPipelineDTO;
+import org.example.versioncontrolserver.entities.*;
 import org.example.versioncontrolserver.exception.PushRejectedException;
+import org.example.versioncontrolserver.kafka.WebhookTrigger;
 import org.example.versioncontrolserver.mapper.CommitMapper;
 import org.example.versioncontrolserver.repositories.BranchRepository;
 import org.example.versioncontrolserver.repositories.CommitRepository;
 import org.example.versioncontrolserver.repositories.RepoRepository;
+import org.example.versioncontrolserver.repositories.WebhookRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,8 +36,10 @@ public class VcsSyncService {
     private final BranchRepository branchRepository;
 
     private final ReviewService reviewService;
+    private final WebhookTrigger webhookTrigger;
 
     private static final Path GLOBAL_OBJECTS_DIR = Paths.get("server-storage/global-objects");
+    private final WebhookRepository webhookRepository;
 
     @Transactional
     public List<String> handlePushInit(String repoName, PushRequestDTO request) {
@@ -57,11 +60,12 @@ public class VcsSyncService {
         boolean isReview = targetRef.startsWith("refs/for/");
 
         if (isReview) {
-            saveCommitEntity(repo, incomingCommit, CommitStatus.IN_REVIEW);
+            Commit reviewCommit = saveCommitEntity(repo, incomingCommit, CommitStatus.IN_REVIEW);
             String realTargetBranch = targetRef.substring("refs/for/".length());
             reviewService.createReviewRequest(request.commitId(), realTargetBranch, incomingCommit.message());
-
             System.out.println("Push (Review): Created request for branch " + realTargetBranch);
+
+            handleWebhooks(repo, realTargetBranch, reviewCommit);
         } else {
             String branchName = targetRef.replace("refs/heads/", "");
 
@@ -84,6 +88,21 @@ public class VcsSyncService {
         }
 
         return missing;
+    }
+
+    private void handleWebhooks(Repo repo, String realTargetBranch, Commit reviewCommit) {
+        Branch branch = branchRepository.findByRepoAndName(repo, realTargetBranch)
+                .orElseThrow(() -> new EntityNotFoundException("Branch does not exist in DB. Webhook cannot trigger"));
+
+        List<Webhook> webhooks = webhookRepository.findByTriggerSourceBranch(branch);
+
+        for (Webhook webhook : webhooks) {
+            RunPipelineDTO event = new RunPipelineDTO(
+                    webhook.getTriggeredPipelineId(),
+                    "sid-pipeline-cilab@mail.com",
+                    Map.of("COMMIT_ID", reviewCommit.getId()));
+            webhookTrigger.triggerPipeline(event);
+        }
     }
 
     private void validateFastForward(Repo repo, String branchName, String incomingParentId) {
@@ -122,13 +141,23 @@ public class VcsSyncService {
         branchRepository.save(branch);
     }
 
-    private boolean saveCommitEntity(Repo repo, CommitRequestDTO commitRequestDTO, CommitStatus status) {
+    private Commit saveCommitEntity(Repo repo, CommitRequestDTO commitRequestDTO, CommitStatus status) {
         if (commitRepository.existsById(commitRequestDTO.commitId())) {
-            return false;
+            return null;
         }
+        Branch branch = branchRepository.findByRepoAndName(repo, commitRequestDTO.branchName())
+                .orElseGet(() -> {
+                    Branch newBranch = Branch.builder()
+                            .name(commitRequestDTO.branchName())
+                            .repo(repo)
+                            .build();
+                    return branchRepository.save(newBranch);
+                });
+
 
         Commit commit = commitMapper.toEntity(commitRequestDTO);
         commit.setRepo(repo);
+        commit.setBranch(branch);
         commit.setStatus(status);
 
         if (!commitRequestDTO.files().isEmpty()) {
@@ -138,7 +167,7 @@ public class VcsSyncService {
         }
 
         commitRepository.save(commit);
-        return true;
+        return commit;
     }
 
     @Transactional(readOnly = true)
