@@ -13,10 +13,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
@@ -97,6 +94,11 @@ public class VcsFileSystem {
     public void saveBlob(String hash, byte[] data) throws IOException {
         Path objectsPath = objectsDir.resolve(hash);
 
+        if (Files.exists(objectsPath)) {
+            return;
+        }
+
+        Files.createDirectories(objectsPath.getParent());
         // if (!Files.exists(objectsPath)) Files.write(objectsPath, data);
         // Using GZIP compression instead of standard file writing
         if (!Files.exists(objectsPath)) {
@@ -135,7 +137,7 @@ public class VcsFileSystem {
     }
 
     public void restoreFile(String filename, String hashTarget) throws IOException, NoSuchAlgorithmException {
-        Path targetPath = Paths.get(filename);
+        Path targetPath = Paths.get(filename).normalize();
         Path blobPath = objectsDir.resolve(hashTarget);
 
         if (Files.exists(targetPath)) {
@@ -144,7 +146,11 @@ public class VcsFileSystem {
             if (hashTarget.equals(currentHashDisk)) return;
         }
 
-        Files.createDirectories(targetPath.getParent());
+        Path parent = targetPath.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+
         try (
                 InputStream fis = Files.newInputStream(blobPath);
                 GZIPInputStream gzis = new GZIPInputStream(fis);
@@ -360,7 +366,7 @@ public class VcsFileSystem {
         return false;
     }
 
-    public void packObjectsToZip(List<String> hashesToPack, Path targetZipPath) throws IOException {
+    public void packObjectsToZip(Set<String> hashesToPack, Path targetZipPath) throws IOException {
         try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(Files.newOutputStream(targetZipPath))) {
             for (String hash : hashesToPack) {
                 Path blobPath = objectsDir.resolve(hash);

@@ -17,7 +17,7 @@ public class VcsEngine {
     private final VcsFileSystem fs;
     private final VcsNetworkClient network;
 
-    public VcsEngine(VcsFileSystem fs, VcsNetworkClient network) {
+    public VcsEngine(VcsFileSystem fs, VcsNetworkClient network, VcsNetworkClient vcsNetworkClient) {
         this.fs = fs;
         this.network = network;
     }
@@ -132,7 +132,8 @@ public class VcsEngine {
         String fetchedId = fetchResult.fetchedCommitId();
 
         if (fetchedId == null) {
-            throw new IllegalStateException("Fetch completed, but no commits were received.");
+            return;
+//            throw new IllegalStateException("Fetch completed, but no commits were received.");
         }
 
         // 2. Integration

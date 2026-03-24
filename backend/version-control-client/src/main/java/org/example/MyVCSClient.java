@@ -2,6 +2,7 @@ package org.example;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.commands.*;
+import org.example.config.EnvConfig;
 
 import java.net.http.HttpClient;
 import java.nio.file.Path;
@@ -12,16 +13,17 @@ import java.util.Map;
 public class MyVCSClient {
     public static void main(String[] args) {
         ObjectMapper objectMapper = new ObjectMapper();
-        Path currentWorkingDir = Paths.get("").toAbsolutePath();
-        VcsFileSystem vcsFileSystem = new VcsFileSystem(currentWorkingDir, objectMapper);
-
         HttpClient httpClient = HttpClient.newHttpClient();
-        String serverUrl = "http://localhost:8080/api/v1/vcs";
-        VcsNetworkClient vcsNetworkClient = new VcsNetworkClient(serverUrl, httpClient, objectMapper);
+        Path currentWorkingDir = Paths.get("").toAbsolutePath();
 
-        VcsEngine vcsEngine = new VcsEngine(vcsFileSystem, vcsNetworkClient);
+        EnvConfig config = EnvConfig.load();
+
+        VcsFileSystem vcsFileSystem = new VcsFileSystem(currentWorkingDir, objectMapper);
+        VcsNetworkClient vcsNetworkClient = new VcsNetworkClient(config, httpClient, objectMapper);
+        VcsEngine vcsEngine = new VcsEngine(vcsFileSystem, vcsNetworkClient, vcsNetworkClient);
 
         Map<String, Command> commands = new HashMap<>();
+        commands.put("login", new LoginCommand(objectMapper, httpClient, config));
         commands.put("init", new InitCommand(vcsFileSystem));
         commands.put("clone", new CloneCommand(vcsFileSystem, vcsEngine));
         commands.put("add", new AddCommand(vcsFileSystem));
@@ -54,6 +56,7 @@ public class MyVCSClient {
             command.execute(args);
         } catch (Exception e) {
             System.err.println("Fatal error occurred during '" + commandName + "': " + e.getMessage());
+            e.printStackTrace();
         }
     }
 

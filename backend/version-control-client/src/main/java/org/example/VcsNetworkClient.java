@@ -9,32 +9,40 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+
+import org.example.config.EnvConfig;
 import org.example.dto.VCSContract.*;
 
 public class VcsNetworkClient {
 
-    private final String serverUrl;
+    private final EnvConfig envConfig;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    public VcsNetworkClient(String serverUrl, HttpClient httpClient, ObjectMapper objectMapper) {
-        this.serverUrl = serverUrl;
+    public VcsNetworkClient(EnvConfig config, HttpClient httpClient, ObjectMapper objectMapper) {
+        this.envConfig = config;
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
     }
 
-    public List<String> initiatePush(String repoName, PushRequest pushRequest) throws IOException, InterruptedException {
+    public List<String> initiatePush(String repoName, PushRequest pushRequest) throws Exception {
         String jsonPayload = objectMapper.writeValueAsString(pushRequest);
 
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(java.net.URI.create(serverUrl + "/repo/" + repoName + "/push-init"))
-                .header("Content-Type", "application/json")
+        HttpRequest request = createAuthorizedRequest("/repo/" + repoName + "/push-init")
                 .POST(HttpRequest.BodyPublishers.ofString(jsonPayload))
                 .build();
+
+//        HttpRequest request = HttpRequest.newBuilder()
+//                .uri(java.net.URI.create(envConfig.vcsServerUrl() + "/repo/" + repoName + "/push-init"))
+//                .header("Content-Type", "application/json")
+//                .POST(HttpRequest.BodyPublishers.ofString(jsonPayload))
+//                .build();
 
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
@@ -48,10 +56,9 @@ public class VcsNetworkClient {
         return objectMapper.readValue(response.body(), new com.fasterxml.jackson.core.type.TypeReference<>() {});
     }
 
-    public void uploadObjects(String repoName, Path zipFilePath) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(java.net.URI.create(serverUrl + "/repo/" + repoName + "/push-objects"))
-                .header("Content-Type", "application/zip")
+    public void uploadObjects(String repoName, Path zipFilePath) throws Exception {
+        HttpRequest request = createAuthorizedRequest("/repo/" + repoName + "/push-objects")
+                .setHeader("Content-Type", "application/zip")
                 .POST(HttpRequest.BodyPublishers.ofFile(zipFilePath))
                 .build();
 
@@ -60,9 +67,8 @@ public class VcsNetworkClient {
         if (response.statusCode() != 200) throw new IOException("Upload failed: " + response.body());
     }
 
-    public InputStream fetchRepositoryData(String repoName, String targetRef) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(serverUrl + "/repo/" + repoName + "/pull?target=" + targetRef))
+    public InputStream fetchRepositoryData(String repoName, String targetRef) throws Exception {
+        HttpRequest request = createAuthorizedRequest("/repo/" + repoName + "/pull?target=" + targetRef)
                 .GET()
                 .build();
 
@@ -74,5 +80,20 @@ public class VcsNetworkClient {
         }
 
         return response.body();
+    }
+
+    public HttpRequest.Builder createAuthorizedRequest(String endpoint) throws Exception {
+        java.nio.file.Path tokenPath = Paths.get(envConfig.tokenFilePath());
+
+        if (!Files.exists(tokenPath)) {
+            throw new RuntimeException("Brak sesji. Zaloguj się używając komendy: myvcs login");
+        }
+
+        String token = Files.readString(tokenPath).trim();
+
+        return HttpRequest.newBuilder()
+                .uri(URI.create(envConfig.vcsServerUrl() + endpoint))
+                .header("Authorization", "Bearer " + token)
+                .header("Content-Type", "application/json");
     }
 }

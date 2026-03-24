@@ -7,7 +7,9 @@ import org.example.dto.VCSContract.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class PushCommand implements Command {
 
@@ -56,18 +58,19 @@ public class PushCommand implements Command {
 
         // 1: Init
         List<String> missingHashes = network.initiatePush(repoName, initRequest);
+        Set<String> uniqueMissingHashes = new HashSet<>(missingHashes);
 
-        if (missingHashes.isEmpty()) {
+        if (uniqueMissingHashes.isEmpty()) {
             System.out.println("Server has all objects. Push complete!");
             return;
         }
 
-        System.out.println("Uploading " + missingHashes.size() + " missing objects...");
+        System.out.println("Uploading " + uniqueMissingHashes.size() + " missing objects...");
 
         Path tempZip = Files.createTempFile("vcs-push", ".zip");
         try {
             // 2: Packing ZIP (FileSystem)
-            fs.packObjectsToZip(missingHashes, tempZip);
+            fs.packObjectsToZip(uniqueMissingHashes, tempZip);
 
             // 3: Send objects (Network)
             network.uploadObjects(repoName, tempZip);
