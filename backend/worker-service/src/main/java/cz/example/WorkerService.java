@@ -40,7 +40,9 @@ public class WorkerService {
                 System.getenv().getOrDefault("REDIS_HOST", "localhost"),
                 Integer.parseInt(System.getenv().getOrDefault("REDIS_PORT", "6379"))
         );
-        LokiService.init("http://localhost:3100", objectMapper);
+
+        String lokiUrl = System.getenv().getOrDefault("LOKI_URL", "http://localhost:3100");
+        LokiService.init(lokiUrl, objectMapper);
 
         DockerClient dockerClient = DockerClientFactory.createInstance();
         DockerTaskRunner dockerRunner = new DockerTaskRunner(dockerClient, objectMapper, redisLogPublisher);

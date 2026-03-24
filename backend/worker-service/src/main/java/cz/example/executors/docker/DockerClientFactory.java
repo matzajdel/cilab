@@ -12,7 +12,7 @@ public class DockerClientFactory {
 
     public static DockerClient createInstance() {
         DefaultDockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder()
-                .withDockerHost("tcp://localhost:2375")
+                .withDockerHost(System.getenv().getOrDefault("DOCKER_HOST", "tcp://localhost:2375"))
                 .build();
         // TODO: set env: DOCKER_HOST=tcp://localhost:2375
 

@@ -82,12 +82,21 @@ public class DockerTaskRunner {
 
     private void pullImage(String image) {
         try {
-            log.info("Pulling docker image: {}", image);
-            dockerClient.pullImageCmd(image)
-                    .start()
-                    .awaitCompletion(60, TimeUnit.MINUTES);
-        } catch (Exception e) {
-            throw new DockerTaskException(PULL_IMAGE_ERROR, e);
+            dockerClient.inspectImageCmd(image).exec();
+
+            log.info("Image '{}' found locally. Skipping pull.", image);
+        } catch (NotFoundException e) {
+            log.info("Image '{}' not found locally. Pulling from registry...", image);
+            try {
+                dockerClient.pullImageCmd(image)
+                        .start()
+                        .awaitCompletion(60, TimeUnit.MINUTES);
+                log.info("Successfully pulled image: {}", image);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                log.error("Image pull was interrupted", ie);
+                throw new RuntimeException("Interrupted while pulling image", ie);
+            }
         }
     }
 

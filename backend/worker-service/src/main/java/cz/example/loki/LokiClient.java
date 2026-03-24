@@ -16,12 +16,7 @@ import cz.example.loki.model.LokiPushRequest;
 import cz.example.loki.model.LokiStream;
 
 /**
- * Minimal, dependency-free Loki client using java.net.http.
- * Sends one-line log entries to the /loki/api/v1/push endpoint asynchronously.
- */
-
-/*
-* Test:
+ * Test:
 * $epochSec = [int64][math]::Floor((Get-Date).ToUniversalTime().Subtract([datetime]'1970-01-01').TotalSeconds)
 * $tsNano = "$($epochSec)000000000"
 * $line = 'Test log line from PowerShell'
