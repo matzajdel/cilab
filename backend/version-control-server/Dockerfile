@@ -5,12 +5,13 @@ COPY pom.xml .
 RUN mvn dependency:go-offline -B
 
 COPY src ./src
-RUN mvn clean package
+RUN mvn clean package -DskipTests
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
 RUN addgroup -S spring && adduser -S spring -G spring
+RUN mkdir -p /app/vcs-data && chown -R spring:spring /app/vcs-data
 USER spring:spring
 
 COPY --from=builder /build/target/*.jar app.jar
